@@ -5,7 +5,12 @@ Keep all secrets and environment-specific values here so the rest of the app
 never reads os.environ directly.
 """
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# backend/app/config.py -> backend/
+BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
@@ -16,6 +21,12 @@ class Settings(BaseSettings):
     # CORS allowlist for the frontend (comma-separated in the env var).
     # Defaults to the local Next.js dev server.
     cors_origins: str = "http://localhost:3000"
+
+    # Path to the seeded SQLite demo database.
+    demo_db_path: str = str(BACKEND_DIR / "demo.sqlite")
+
+    # Rows shown per table when returning schema context.
+    schema_sample_rows: int = 3
 
     model_config = SettingsConfigDict(
         env_file=".env",

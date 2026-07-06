@@ -7,7 +7,7 @@ and the agent flow are added in later milestones.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import routes_health
+from app.api import routes_connections, routes_health
 from app.config import settings
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -21,6 +21,7 @@ app.add_middleware(
 )
 
 app.include_router(routes_health.router)
+app.include_router(routes_connections.router)
 
 
 @app.get("/")
