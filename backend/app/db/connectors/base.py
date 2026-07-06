@@ -31,6 +31,14 @@ class TableInfo:
     row_count: int = 0
 
 
+@dataclass
+class QueryResult:
+    columns: list[str] = field(default_factory=list)
+    rows: list[dict] = field(default_factory=list)
+    row_count: int = 0
+    runtime_ms: float = 0.0
+
+
 class BaseConnector(ABC):
     """Base class for all database connectors."""
 

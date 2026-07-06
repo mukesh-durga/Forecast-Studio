@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     # Rows shown per table when returning schema context.
     schema_sample_rows: int = 3
 
+    # SQL guard / execution safety limits.
+    default_row_limit: int = 100  # LIMIT injected when a query has none
+    max_row_limit: int = 1000     # hard ceiling; larger LIMITs are clamped
+    query_timeout_seconds: float = 5.0  # wall-clock cap for a single query
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
