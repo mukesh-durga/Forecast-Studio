@@ -31,3 +31,22 @@ next-env.d.ts
 .idea/
 .vscode/
 *.log
+
+# Python
+backend/venv/
+__pycache__/
+*.pyc
+
+# Node
+frontend/node_modules/
+.next/
+frontend/.next/
+
+# Env
+.env
+.env.local
+backend/.env
+frontend/.env.local
+
+# OS
+.DS_Store
