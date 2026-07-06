@@ -42,10 +42,8 @@ _BLOCKED_RE = re.compile(
 # Matches a trailing/inner comment marker.
 _COMMENT_RE = re.compile(r"(--|/\*|\*/|#)")
 
-# Matches `LIMIT <number>` (optionally the count in `LIMIT n OFFSET m`).
-_LIMIT_NUM_RE = re.compile(r"\blimit\b\s+(\d+)", re.IGNORECASE)
-# Detects a LIMIT keyword in any form (to catch unsupported `LIMIT ALL`).
-_LIMIT_KW_RE = re.compile(r"\blimit\b", re.IGNORECASE)
+# Matches `LIMIT <number>` — used to preserve or clamp the row limit.
+_LIMIT_RE = re.compile(r"\blimit\s+(\d+)\b", re.IGNORECASE)
 
 
 class SqlGuardError(ValueError):
@@ -100,19 +98,25 @@ def validate_sql(
 
 
 def _enforce_limit(sql: str, *, default_limit: int, max_limit: int) -> str:
-    """Inject, preserve, or clamp the LIMIT clause."""
-    num_match = _LIMIT_NUM_RE.search(sql)
+    """Enforce a row LIMIT while preserving the SQL string verbatim.
 
-    if num_match:
-        current = int(num_match.group(1))
-        if current > max_limit:
-            # Clamp the existing limit down to the maximum.
-            return sql[: num_match.start(1)] + str(max_limit) + sql[num_match.end(1):]
-        return sql  # Existing, in-range LIMIT is preserved as-is.
+    This never rebuilds GROUP BY, ORDER BY, or any other clause. It only:
+      - removes a single trailing semicolon,
+      - appends `` LIMIT <default_limit>`` when no LIMIT is present,
+      - returns the SQL unchanged when the existing LIMIT is in range,
+      - rewrites *only* the numeric value when the existing LIMIT is too large.
+    """
+    cleaned = re.sub(r";\s*$", "", sql.strip())
 
-    # A LIMIT keyword without a plain integer (e.g. `LIMIT ALL`) is unsupported.
-    if _LIMIT_KW_RE.search(sql):
-        raise SqlGuardError("Unsupported LIMIT clause; use `LIMIT <number>`.")
+    match = _LIMIT_RE.search(cleaned)
+    if not match:
+        # No LIMIT present -> append the default with one separating space.
+        return f"{cleaned} LIMIT {default_limit}"
 
-    # No LIMIT at all — inject the default.
-    return f"{sql} LIMIT {default_limit}"
+    limit_value = int(match.group(1))
+    if limit_value <= max_limit:
+        # In range -> return the SQL unchanged.
+        return cleaned
+
+    # Too large -> replace ONLY the numeric span; everything else is untouched.
+    return cleaned[: match.start(1)] + str(max_limit) + cleaned[match.end(1):]

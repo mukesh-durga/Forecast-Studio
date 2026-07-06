@@ -74,6 +74,52 @@ def test_sql_guard_enforces_max_limit():
     assert "100000" not in result
 
 
+# Regression: the guard must never collapse internal whitespace such as the
+# space in "GROUP BY p.name" (bug: it became "GROUP BYp.name").
+TOP_PRODUCTS_SQL = (
+    "SELECT p.name AS product_name, SUM(oi.quantity * oi.unit_price) AS revenue "
+    "FROM order_items oi JOIN products p ON p.id = oi.product_id "
+    "GROUP BY p.name ORDER BY revenue DESC LIMIT 5"
+)
+
+
+def test_sql_guard_preserves_group_by_whitespace_in_range_limit():
+    result = guard(TOP_PRODUCTS_SQL)  # LIMIT 5 is in range → preserved as-is
+    assert "GROUP BY p.name" in result
+    assert "GROUP BYp.name" not in result
+
+
+def test_sql_guard_preserves_group_by_whitespace_when_clamping():
+    # Force the clamp path; whitespace elsewhere must stay intact.
+    over_limit = TOP_PRODUCTS_SQL.replace("LIMIT 5", "LIMIT 100000")
+    result = guard(over_limit)
+    assert "GROUP BY p.name" in result
+    assert "GROUP BYp.name" not in result
+    assert f"LIMIT {MAX_LIMIT}" in result
+
+
+def test_sql_guard_preserves_group_by_whitespace_when_injecting():
+    # No LIMIT → guard appends one; the GROUP BY space must be untouched.
+    no_limit = "SELECT city, COUNT(*) AS c FROM customers GROUP BY city"
+    result = guard(no_limit)
+    assert "GROUP BY city LIMIT" in result
+    assert "GROUP BYcity" not in result
+
+
+def test_sql_guard_exact_top_products_input_is_not_mangled():
+    """Regression for the reported bug using the exact reported input."""
+    sql = (
+        "SELECT p.name AS product_name, SUM(oi.quantity * oi.unit_price) AS revenue "
+        "FROM order_items oi JOIN products p ON p.id = oi.product_id "
+        "GROUP BY p.name ORDER BY revenue DESC LIMIT 5"
+    )
+    result = validate_sql(sql)  # real config defaults; LIMIT 5 is in range
+    assert "GROUP BY p.name" in result
+    assert "GROUP BYp.name" not in result
+    assert "ORDER BY revenue DESC" in result
+    assert result == sql  # in-range LIMIT → original SQL returned unchanged
+
+
 # --- A few extra edge cases (not required, but cheap and reassuring) ---
 
 def test_sql_guard_blocks_truncate():

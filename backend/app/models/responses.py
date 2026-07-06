@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -26,3 +26,16 @@ class SchemaResponse(BaseModel):
     dialect: str
     table_count: int
     tables: list[TableSchema]
+
+
+class GenerateSqlResponse(BaseModel):
+    question: str
+    connection_id: str
+    dialect: str
+    generator: str                    # which backend produced the SQL (e.g. "local")
+    matched: bool                     # did a known template match the question?
+    intent: Optional[str] = None      # name of the matched template, if any
+    raw_sql: str                      # exactly what the generator produced
+    sql: Optional[str] = None         # safe, LIMIT-enforced SQL (when guard passes)
+    guard_passed: bool
+    guard_error: Optional[str] = None  # why the guard rejected it, if it did

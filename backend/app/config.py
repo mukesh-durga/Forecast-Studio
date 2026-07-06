@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     max_row_limit: int = 1000     # hard ceiling; larger LIMITs are clamped
     query_timeout_seconds: float = 5.0  # wall-clock cap for a single query
 
+    # SQL generation backend. "local" is a free, deterministic, offline
+    # rule-based generator that needs no API key or internet. A real LLM
+    # provider can be added later behind the same SqlGenerator interface.
+    sql_generator_backend: str = "local"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
