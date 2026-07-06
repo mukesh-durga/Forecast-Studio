@@ -39,3 +39,18 @@ class GenerateSqlResponse(BaseModel):
     sql: Optional[str] = None         # safe, LIMIT-enforced SQL (when guard passes)
     guard_passed: bool
     guard_error: Optional[str] = None  # why the guard rejected it, if it did
+
+
+class QueryResponse(BaseModel):
+    question: str
+    connection_id: str
+    dialect: str
+    generator: str                    # backend that produced the SQL (e.g. "local")
+    matched: bool                     # did a known template match the question?
+    intent: Optional[str] = None      # name of the matched template, if any
+    sql: str                          # the safe, guarded SQL that was executed
+    guard_passed: bool                # always True here (unsafe SQL is not executed)
+    columns: list[str]
+    rows: list[dict[str, Any]]
+    row_count: int
+    runtime_ms: float

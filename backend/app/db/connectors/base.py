@@ -61,6 +61,10 @@ class BaseConnector(ABC):
     def count_rows(self, table: str) -> int:
         """Return the total number of rows in a table."""
 
+    @abstractmethod
+    def run_select(self, sql: str, timeout_seconds: float) -> "QueryResult":
+        """Execute an already-guarded SELECT read-only, with a wall-clock timeout."""
+
     def inspect(self, sample_rows: int) -> list[TableInfo]:
         """Assemble a compact schema snapshot for every table."""
         tables: list[TableInfo] = []

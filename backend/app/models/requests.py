@@ -8,3 +8,8 @@ from pydantic import BaseModel, Field
 class GenerateSqlRequest(BaseModel):
     question: str = Field(..., min_length=1, description="Plain-English question")
     connection_id: str = "demo"
+
+
+class QueryRequest(BaseModel):
+    question: str = Field(..., min_length=1, description="Plain-English question")
+    connection_id: str = "demo"
