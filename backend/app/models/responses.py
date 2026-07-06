@@ -41,6 +41,13 @@ class GenerateSqlResponse(BaseModel):
     guard_error: Optional[str] = None  # why the guard rejected it, if it did
 
 
+class Verification(BaseModel):
+    verified: bool
+    confidence: float                 # 0.0 - 1.0
+    explanation: str
+    failure_reason: Optional[str] = None
+
+
 class QueryResponse(BaseModel):
     question: str
     connection_id: str
@@ -54,3 +61,4 @@ class QueryResponse(BaseModel):
     rows: list[dict[str, Any]]
     row_count: int
     runtime_ms: float
+    verification: Verification

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.models.requests import GenerateSqlRequest, QueryRequest
 from app.models.responses import GenerateSqlResponse, QueryResponse
-from app.services import execution_service, schema_service, sql_generator
+from app.services import execution_service, schema_service, sql_generator, verification_service
 from app.services.sql_generator import SqlGenerator, get_sql_generator
 from app.services.sql_guard import SqlGuardError, validate_sql
 
@@ -91,6 +91,17 @@ def run_query(
     except Exception as exc:  # e.g. sqlite3.OperationalError on invalid SQL
         raise HTTPException(status_code=400, detail=f"Query execution failed: {exc}")
 
+    # 5. Verify the result answers the question (free, local, deterministic).
+    #    SQL and rows are always returned, even when verification fails.
+    verification = verification_service.verify(
+        intent=result.intent,
+        matched=result.matched,
+        sql=safe_sql,
+        columns=query_result.columns,
+        rows=query_result.rows,
+        row_count=query_result.row_count,
+    )
+
     return QueryResponse(
         question=request.question,
         connection_id=request.connection_id,
@@ -104,4 +115,5 @@ def run_query(
         rows=query_result.rows,
         row_count=query_result.row_count,
         runtime_ms=query_result.runtime_ms,
+        verification=verification,
     )
