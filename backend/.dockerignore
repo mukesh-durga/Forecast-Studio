@@ -1,0 +1,23 @@
+# Keep the image lean and never bake secrets or local artifacts.
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Local secrets / config — provide via environment variables at deploy time.
+.env
+.env.*
+
+# Regenerable demo database (seeded on startup).
+*.sqlite
+*.sqlite3
+*.db
+
+# Tests are not needed in the runtime image.
+app/tests/
+
+.DS_Store
+*.log

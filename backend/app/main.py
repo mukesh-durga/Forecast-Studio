@@ -1,16 +1,27 @@
-"""Forecast Studio — FastAPI application entrypoint.
+"""Forecast Studio — FastAPI application entrypoint."""
 
-Milestone 1: minimal app exposing a health check. Database, SQL generation,
-and the agent flow are added in later milestones.
-"""
+import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import routes_connections, routes_health, routes_query
 from app.config import settings
+from app.db import sample_seed
 
-app = FastAPI(title=settings.app_name, version=settings.app_version)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Demo mode: ensure the SQLite demo database exists so the app works out of
+    # the box locally and in production. Only seeds when missing (never wipes an
+    # existing database on restart).
+    if not os.path.exists(settings.demo_db_path):
+        sample_seed.seed(settings.demo_db_path)
+    yield
+
+
+app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
