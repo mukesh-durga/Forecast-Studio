@@ -35,6 +35,21 @@ const config: Config = {
         card: "0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06)",
         "card-hover": "0 4px 12px rgba(15, 23, 42, 0.08)",
       },
+      keyframes: {
+        "fade-in": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        "fade-up": {
+          "0%": { opacity: "0", transform: "translateY(6px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+      },
+      animation: {
+        // Subtle (motion 3/10). prefers-reduced-motion collapses these to instant.
+        "fade-in": "fade-in 0.25s ease-out both",
+        "fade-up": "fade-up 0.3s ease-out both",
+      },
     },
   },
   plugins: [],
