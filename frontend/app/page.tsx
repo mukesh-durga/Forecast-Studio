@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { runQuery } from "@/lib/api";
+import { runQuery, EXAMPLE_QUESTIONS } from "@/lib/api";
 import type { QueryResponse } from "@/lib/types";
 import QueryBox from "@/components/QueryBox";
 import Sidebar from "@/components/Sidebar";
@@ -67,6 +67,51 @@ function ErrorCard({ message }: { message: string }) {
         <p className="text-sm font-semibold text-red-800">Query failed</p>
         <p className="mt-0.5 break-words text-sm text-red-600">{message}</p>
       </div>
+    </div>
+  );
+}
+
+function UnsupportedCard({
+  message,
+  suggestions,
+  onPick,
+}: {
+  message: string;
+  suggestions: string[];
+  onPick: (q: string) => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 shadow-card sm:p-6">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+          <svg viewBox="0 0 20 20" className="h-5 w-5" fill="currentColor" aria-hidden>
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a1 1 0 011 1v4a1 1 0 11-2 0V6a1 1 0 011-1zm0 9.5a1.1 1.1 0 100-2.2 1.1 1.1 0 000 2.2z" clipRule="evenodd" />
+          </svg>
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-amber-800">Question not supported yet</p>
+          <p className="mt-1 text-sm text-slate-600">{message}</p>
+        </div>
+      </div>
+
+      {suggestions.length > 0 && (
+        <div className="mt-4">
+          <p className="font-mono text-xs font-medium uppercase tracking-widest text-slate-400">
+            Try one of these
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {suggestions.map((q) => (
+              <button
+                key={q}
+                onClick={() => onPick(q)}
+                className="rounded-lg border border-hairline bg-white px-3 py-1.5 text-sm text-slate-600 transition-colors hover:border-primary/40 hover:bg-blue-50 hover:text-primary"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -166,7 +211,7 @@ export default function Home() {
 
               {loading && !result && <ResultSkeleton />}
 
-              {result && (
+              {result && result.matched && (
                 <div className="flex min-w-0 animate-fade-in flex-col gap-6">
                   <AnswerCard result={result} />
                   <MetadataBar result={result} />
@@ -174,7 +219,22 @@ export default function Home() {
                     <h3 className="mb-2 text-sm font-semibold text-slate-700">Result</h3>
                     <ResultTable columns={result.columns} rows={result.rows} />
                   </section>
-                  <SqlPanel sql={result.sql} />
+                  {result.sql && <SqlPanel sql={result.sql} />}
+                </div>
+              )}
+
+              {result && !result.matched && (
+                <div className="animate-fade-in">
+                  <UnsupportedCard
+                    message={
+                      result.message ??
+                      "This local demo currently supports predefined database analytics questions. Try one of the examples below."
+                    }
+                    suggestions={
+                      result.suggestions?.length ? result.suggestions : EXAMPLE_QUESTIONS.slice(0, 6)
+                    }
+                    onPick={pickExample}
+                  />
                 </div>
               )}
 

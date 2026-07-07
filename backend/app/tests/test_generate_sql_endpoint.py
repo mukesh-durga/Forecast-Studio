@@ -42,7 +42,11 @@ def test_generate_sql_endpoint_unrecognized_question(client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["matched"] is False
-    assert body["guard_passed"] is True     # fallback is still a safe SELECT
+    assert body["intent"] == "unsupported"
+    # No SQL fabricated -> empty raw SQL, and the guard rejects it (not executable).
+    assert body["raw_sql"] == ""
+    assert body["guard_passed"] is False
+    assert body["sql"] is None
 
 
 def test_generate_sql_endpoint_unknown_connection(client):

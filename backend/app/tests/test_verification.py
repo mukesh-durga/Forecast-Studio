@@ -121,12 +121,13 @@ def test_query_includes_verification_verified(client):
     assert body["verification"]["failure_reason"] is None
 
 
-def test_query_unmatched_question_still_returns_sql_and_rows(client):
+def test_query_unsupported_question_is_unverified(client):
     resp = client.post("/query", json={"question": "tell me a joke"})
     assert resp.status_code == 200
     body = resp.json()
-    # Verification fails, but SQL and rows remain visible.
+    # Unsupported: no fabricated answer; verification is explicitly unverified.
+    assert body["matched"] is False
+    assert body["intent"] == "unsupported"
+    assert body["sql"] is None
     assert body["verification"]["verified"] is False
-    assert body["verification"]["confidence"] <= 0.3
-    assert body["sql"]
-    assert "rows" in body and "columns" in body
+    assert body["verification"]["failure_reason"] == "unsupported_question"

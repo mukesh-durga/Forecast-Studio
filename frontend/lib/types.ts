@@ -16,11 +16,13 @@ export interface QueryResponse {
   generator: string;
   matched: boolean;
   intent: string | null;
-  sql: string;
+  sql: string | null; // null for unsupported questions
   guard_passed: boolean;
   columns: string[];
   rows: Row[];
   row_count: number;
   runtime_ms: number;
-  verification: Verification;
+  verification: Verification | null; // null when nothing was executed
+  message?: string | null; // user-facing note for unsupported questions
+  suggestions?: string[]; // example questions to try
 }

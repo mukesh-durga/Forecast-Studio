@@ -58,7 +58,9 @@ function ShieldAlert() {
 }
 
 export default function AnswerCard({ result }: { result: QueryResponse }) {
-  const { verified, confidence, explanation, failure_reason } = result.verification;
+  const v = result.verification;
+  if (!v) return null; // nothing to show when no verification (e.g. unsupported)
+  const { verified, confidence, explanation, failure_reason } = v;
   const pct = Math.round(confidence * 100);
 
   return (
@@ -71,7 +73,7 @@ export default function AnswerCard({ result }: { result: QueryResponse }) {
             {summarize(result)}
           </p>
         </div>
-        <VerificationBadge verification={result.verification} />
+        <VerificationBadge verification={v} />
       </div>
 
       {/* Verification panel — the product differentiator */}

@@ -33,10 +33,15 @@ class Settings(BaseSettings):
     max_row_limit: int = 1000     # hard ceiling; larger LIMITs are clamped
     query_timeout_seconds: float = 5.0  # wall-clock cap for a single query
 
-    # SQL generation backend. "local" is a free, deterministic, offline
-    # rule-based generator that needs no API key or internet. A real LLM
-    # provider can be added later behind the same SqlGenerator interface.
-    sql_generator_backend: str = "local"
+    # SQL generation provider. "local" is a free, deterministic, offline
+    # rule-based generator (no API key, no internet). "groq" uses the Groq API
+    # for generation and falls back to local on any failure. Default: local.
+    sql_generator_provider: str = "local"  # env SQL_GENERATOR_PROVIDER
+
+    # Groq (server-side only — never exposed to the browser).
+    groq_api_key: str = ""                 # env GROQ_API_KEY
+    groq_model: str = "llama-3.3-70b-versatile"  # env GROQ_MODEL
+    groq_timeout_seconds: float = 15.0     # per-request cap for Groq calls
 
     model_config = SettingsConfigDict(
         env_file=".env",

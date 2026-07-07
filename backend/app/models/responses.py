@@ -54,11 +54,13 @@ class QueryResponse(BaseModel):
     dialect: str
     generator: str                    # backend that produced the SQL (e.g. "local")
     matched: bool                     # did a known template match the question?
-    intent: Optional[str] = None      # name of the matched template, if any
-    sql: str                          # the safe, guarded SQL that was executed
-    guard_passed: bool                # always True here (unsafe SQL is not executed)
-    columns: list[str]
-    rows: list[dict[str, Any]]
-    row_count: int
-    runtime_ms: float
-    verification: Verification
+    intent: Optional[str] = None      # matched template name, or "unsupported"
+    sql: Optional[str] = None         # guarded SQL that was executed; None if unsupported
+    guard_passed: bool                # True for executed queries; False when unsupported
+    columns: list[str] = []
+    rows: list[dict[str, Any]] = []
+    row_count: int = 0
+    runtime_ms: float = 0.0
+    verification: Optional[Verification] = None  # None when nothing was executed
+    message: Optional[str] = None     # user-facing note (set for unsupported questions)
+    suggestions: list[str] = []       # example questions to try (unsupported questions)

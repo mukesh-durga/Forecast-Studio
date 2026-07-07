@@ -9,7 +9,7 @@ API key or network access.
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.models.requests import GenerateSqlRequest, QueryRequest
-from app.models.responses import GenerateSqlResponse, QueryResponse
+from app.models.responses import GenerateSqlResponse, QueryResponse, Verification
 from app.services import execution_service, schema_service, sql_generator, verification_service
 from app.services.sql_generator import SqlGenerator, get_sql_generator
 from app.services.sql_guard import SqlGuardError, validate_sql
@@ -71,6 +71,32 @@ def run_query(
 
     # 2. Generate SQL from the question (free, deterministic, offline).
     result = generator.generate(request.question, schema)
+
+    # 2a. UNSUPPORTED: no confident match -> never fabricate or execute SQL.
+    #     Return an honest, helpful response with example questions.
+    if not result.matched:
+        return QueryResponse(
+            question=request.question,
+            connection_id=request.connection_id,
+            dialect=schema.dialect,
+            generator=generator.backend_name,
+            matched=False,
+            intent=sql_generator.UNSUPPORTED_INTENT,
+            sql=None,
+            guard_passed=False,
+            columns=[],
+            rows=[],
+            row_count=0,
+            runtime_ms=0.0,
+            verification=Verification(
+                verified=False,
+                confidence=0.0,
+                explanation="No supported database analytics question matched, so no SQL was generated or executed.",
+                failure_reason=sql_generator.UNSUPPORTED_FAILURE_REASON,
+            ),
+            message=sql_generator.UNSUPPORTED_MESSAGE,
+            suggestions=sql_generator.EXAMPLE_QUESTIONS,
+        )
 
     # 3. SAFETY GATE: only guard-approved SQL is ever executed.
     try:

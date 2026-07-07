@@ -106,6 +106,17 @@ def test_sql_guard_preserves_group_by_whitespace_when_injecting():
     assert "GROUP BYcity" not in result
 
 
+def test_sql_guard_preserves_join_on_spacing():
+    """Regression: the guard must not glue 'ON' to the next identifier."""
+    sql = (
+        "SELECT p.name FROM order_items oi JOIN products p "
+        "ON p.id = oi.product_id GROUP BY p.name"
+    )
+    result = guard(sql)
+    assert "ON p.id" in result
+    assert "ONp" not in result
+
+
 def test_sql_guard_exact_top_products_input_is_not_mangled():
     """Regression for the reported bug using the exact reported input."""
     sql = (

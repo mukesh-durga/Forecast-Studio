@@ -52,12 +52,12 @@ def test_generated_sql_passes_guard(generator, schema, question, intent, fragmen
     assert safe.upper().startswith("SELECT")
 
 
-def test_unrecognized_question_returns_safe_fallback(generator, schema):
+def test_unrecognized_question_is_unsupported(generator, schema):
     result = generator.generate("please compute the meaning of life", schema)
     assert result.matched is False
-    assert result.intent is None
-    # Fallback is still a grounded SELECT that passes the guard.
-    validate_sql(result.sql)
+    assert result.intent == "unsupported"
+    # No executable SQL is fabricated for unsupported questions.
+    assert result.sql == ""
 
 
 def test_generated_sql_only_uses_real_tables(generator, schema):
@@ -68,6 +68,15 @@ def test_generated_sql_only_uses_real_tables(generator, schema):
                           "support_tickets", "marketing_campaigns"):
             if candidate in sql:
                 assert candidate in real_tables
+
+
+def test_example_questions_have_natural_spacing():
+    from app.services.sql_generator import EXAMPLE_QUESTIONS
+
+    assert "Which product category generated the highest revenue?" in EXAMPLE_QUESTIONS
+    joined = " ".join(EXAMPLE_QUESTIONS)
+    for glued in ("generatedthe", "categorygenerated", "highestrevenue"):
+        assert glued not in joined
 
 
 def test_factory_returns_local_generator():

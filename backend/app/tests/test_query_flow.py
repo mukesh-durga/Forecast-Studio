@@ -61,13 +61,74 @@ def test_query_unknown_connection_returns_404(client):
     assert resp.status_code == 404
 
 
+def test_query_unsupported_question_does_not_execute(client):
+    resp = client.post("/query", json={"question": "what's the weather tomorrow?"})
+    assert resp.status_code == 200
+    body = resp.json()
+    # Honest unsupported response — nothing was executed, nothing fabricated.
+    assert body["matched"] is False
+    assert body["intent"] == "unsupported"
+    assert body["sql"] is None
+    assert body["guard_passed"] is False
+    assert body["row_count"] == 0
+    assert body["rows"] == []
+    assert body["columns"] == []
+    # Verification present, explicitly unverified with the unsupported reason.
+    assert body["verification"]["verified"] is False
+    assert body["verification"]["failure_reason"] == "unsupported_question"
+    # Exact, naturally-spaced user-facing strings (no missing spaces).
+    assert body["message"] == (
+        "This local demo currently supports predefined database analytics questions. "
+        "Try one of the examples below."
+    )
+    assert body["verification"]["explanation"] == (
+        "No supported database analytics question matched, so no SQL was generated or executed."
+    )
+    # Guard against the reported concatenation typos.
+    for glued in ("SQLwas", "currentlysupports", "databaseanalytics", "questionmatched"):
+        assert glued not in body["message"] + body["verification"]["explanation"]
+    assert len(body["suggestions"]) > 0
+
+
+def test_supported_question_still_executes_and_verifies(client):
+    """Guard against regressions: supported questions are unchanged."""
+    resp = client.post("/query", json={"question": "What are the top 5 products by revenue?"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["matched"] is True
+    assert body["intent"] == "top_products_by_revenue"
+    assert body["row_count"] > 0
+    assert body["verification"]["verified"] is True
+    assert body["sql"] and "LIMIT" in body["sql"]
+
+
+def test_supported_sql_and_explanation_spacing(client):
+    """Endpoint-level regression (TestClient -> POST /query): the live response
+    SQL and verification explanation must be naturally spaced."""
+    resp = client.post("/query", json={"question": "What are the top 5 products by revenue?"})
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # Final /query response SQL — exact expected substring, no glued 'ONp'.
+    assert "JOIN products p ON p.id = oi.product_id" in body["sql"]
+    assert "ON p.id" in body["sql"]
+    assert "ONp" not in body["sql"]
+
+    # Verification explanation — exact expected substring, no glued 'returns['.
+    assert body["verification"]["verified"] is True
+    assert "The query returns ['product_name', 'revenue']" in body["verification"]["explanation"]
+    assert "returns[" not in body["verification"]["explanation"]
+
+
 class _UnsafeGenerator(SqlGenerator):
     """A generator that emits a write statement — must never be executed."""
 
     backend_name = "unsafe-test"
 
     def generate(self, question, schema):
-        return GeneratedSql(sql="DELETE FROM customers", intent=None, matched=False)
+        # matched=True so it reaches the guard (an unsupported/matched=False
+        # question short-circuits before execution and is never guarded).
+        return GeneratedSql(sql="DELETE FROM customers", intent="evil", matched=True)
 
 
 def test_query_never_executes_unsafe_sql(client):
