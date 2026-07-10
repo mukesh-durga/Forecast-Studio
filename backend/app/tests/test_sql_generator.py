@@ -25,7 +25,7 @@ def generator():
 # (question, expected intent, a substring that must appear in the SQL)
 DEMO_CASES = [
     ("What are the top 5 products by revenue?", "top_products_by_revenue", "order_items"),
-    ("Which city has the most customers?", "city_most_customers", "GROUP BY city"),
+    ("Which city has the most customers?", "city_most_customers", "GROUP BY customers.city"),
     ("What was the total revenue by month?", "monthly_revenue", "strftime"),
     ("Which product category generated the highest revenue?", "category_revenue", "category"),
     ("What is the average order value?", "average_order_value", "average_order_value"),
@@ -86,10 +86,29 @@ def test_factory_returns_local_generator():
 
 
 def test_top_products_end_to_end_preserves_whitespace(generator, schema):
-    """Regression: 'top 5 products by revenue' must keep 'GROUP BY p.name'
-    intact after passing through the guard (bug: 'GROUP BYp.name')."""
+    """Regression: 'top 5 products by revenue' must keep 'GROUP BY products.name'
+    intact after passing through the guard (historic bug: 'GROUP BYp.name')."""
     result = generator.generate("What are the top 5 products by revenue?", schema)
     final = validate_sql(result.sql)
-    assert "GROUP BY p.name" in final
-    assert "GROUP BYp.name" not in final
+    assert "GROUP BY products.name" in final
+    assert "GROUP BYproducts.name" not in final
     assert final.rstrip().endswith("LIMIT 5")
+
+
+def test_local_sql_is_rendered_from_the_plan(generator, schema):
+    """The local generator must derive SQL from the structured plan, so a
+    change to the plan changes the SQL (no hidden per-question templates)."""
+    from app.services.planner_service import create_plan
+
+    plan = create_plan("What are the top 5 products by revenue?", schema)
+    plan.limit = 3
+    plan.order_by = ["revenue ASC"]
+    result = generator.generate("What are the top 5 products by revenue?", schema, plan)
+    assert result.sql.endswith("ORDER BY revenue ASC LIMIT 3")
+
+
+def test_rendered_sql_uses_postgres_month_expression(generator, schema):
+    pg_schema = schema.model_copy(update={"dialect": "postgresql"})
+    result = generator.generate("total revenue by month", pg_schema)
+    assert "to_char(orders.order_date, 'YYYY-MM')" in result.sql
+    assert "strftime" not in result.sql

@@ -9,6 +9,8 @@ import AnswerCard from "@/components/AnswerCard";
 import MetadataBar from "@/components/MetadataBar";
 import SqlPanel from "@/components/SqlPanel";
 import ResultTable from "@/components/ResultTable";
+import QueryPlanPanel from "@/components/QueryPlanPanel";
+import TelemetryPanel from "@/components/TelemetryPanel";
 
 function LogoMark() {
   return (
@@ -215,11 +217,22 @@ export default function Home() {
                 <div className="flex min-w-0 animate-fade-in flex-col gap-6">
                   <AnswerCard result={result} />
                   <MetadataBar result={result} />
+                  {result.cache_hit && result.cached_from_question && (
+                    <p className="-mt-2 flex items-center gap-1.5 text-xs text-slate-500">
+                      <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 text-primary" fill="currentColor" aria-hidden>
+                        <path d="M10 3a7 7 0 100 14 7 7 0 000-14zm.75 3.5a.75.75 0 00-1.5 0v3.75c0 .2.08.39.22.53l2.5 2.5a.75.75 0 101.06-1.06l-2.28-2.28V6.5z" />
+                      </svg>
+                      Reused from cache · matched an earlier question:{" "}
+                      <span className="font-medium text-slate-600">“{result.cached_from_question}”</span>
+                    </p>
+                  )}
                   <section className="min-w-0">
                     <h3 className="mb-2 text-sm font-semibold text-slate-700">Result</h3>
                     <ResultTable columns={result.columns} rows={result.rows} />
                   </section>
                   {result.sql && <SqlPanel sql={result.sql} />}
+                  {result.plan && <QueryPlanPanel plan={result.plan} />}
+                  {result.telemetry && <TelemetryPanel telemetry={result.telemetry} />}
                 </div>
               )}
 

@@ -109,10 +109,10 @@ def test_supported_sql_and_explanation_spacing(client):
     assert resp.status_code == 200
     body = resp.json()
 
-    # Final /query response SQL — exact expected substring, no glued 'ONp'.
-    assert "JOIN products p ON p.id = oi.product_id" in body["sql"]
-    assert "ON p.id" in body["sql"]
-    assert "ONp" not in body["sql"]
+    # Final /query response SQL — exact expected substring, no glued 'ONo'.
+    assert "JOIN products ON order_items.product_id = products.id" in body["sql"]
+    assert " ON order_items." in body["sql"]
+    assert "ONorder_items" not in body["sql"]
 
     # Verification explanation — exact expected substring, no glued 'returns['.
     assert body["verification"]["verified"] is True
@@ -125,7 +125,7 @@ class _UnsafeGenerator(SqlGenerator):
 
     backend_name = "unsafe-test"
 
-    def generate(self, question, schema):
+    def generate(self, question, schema, plan=None):
         # matched=True so it reaches the guard (an unsupported/matched=False
         # question short-circuits before execution and is never guarded).
         return GeneratedSql(sql="DELETE FROM customers", intent="evil", matched=True)

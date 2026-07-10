@@ -1,0 +1,23 @@
+# Render blueprint for the Forecast Studio backend.
+# Encodes the deploy settings: root path = backend/, local SQL provider, CORS.
+# GROQ_API_KEY is intentionally omitted — production stays stable in local mode.
+#
+# Other hosts (Railway / Fly / etc.): enter the same values in their dashboard:
+#   - Root / working directory: backend/
+#   - SQL_GENERATOR_PROVIDER=local
+#   - CORS_ORIGINS=http://localhost:3000   (update to your frontend URL once live)
+#   - do NOT set GROQ_API_KEY for now
+services:
+  - type: web
+    name: forecast-studio-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    plan: free
+    envVars:
+      - key: SQL_GENERATOR_PROVIDER
+        value: local
+      - key: CORS_ORIGINS
+        value: http://localhost:3000
+      # GROQ_API_KEY intentionally NOT set — keep production in local mode.

@@ -13,7 +13,7 @@ export async function runQuery(
   const res = await fetch(`${API_BASE_URL}/query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, connection_id: connectionId }),
+    body: JSON.stringify({ question, connection_id: connectionId, show_debug: true }),
     cache: "no-store",
   });
 

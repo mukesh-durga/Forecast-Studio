@@ -1,17 +1,17 @@
-"""Seed the SQLite demo database with the shared e-commerce dataset.
+"""Seed a Postgres database (e.g. Neon) with the shared e-commerce dataset.
 
-Run from the backend/ directory:
+Run from the backend/ directory with POSTGRES_DATABASE_URL (or DATABASE_URL) set:
 
-    python -m app.db.sample_seed
+    export POSTGRES_DATABASE_URL="postgresql://user:pass@host/dbname?sslmode=require"
+    python -m app.db.postgres_seed
 
-Idempotent: drops and recreates the demo tables each run. Data is deterministic
-(see ``demo_dataset``), identical to the Postgres demo.
+Idempotent: drops and recreates the demo tables. Data is identical to the
+SQLite demo (see ``demo_dataset``).
 """
 
 from __future__ import annotations
 
-import os
-import sqlite3
+import sys
 
 from app.config import settings
 from app.db import demo_dataset
@@ -36,7 +36,7 @@ CREATE TABLE products (
     id       INTEGER PRIMARY KEY,
     name     TEXT NOT NULL,
     category TEXT NOT NULL,
-    price    REAL NOT NULL
+    price    DOUBLE PRECISION NOT NULL
 );
 
 CREATE TABLE orders (
@@ -51,7 +51,7 @@ CREATE TABLE order_items (
     order_id   INTEGER NOT NULL REFERENCES orders(id),
     product_id INTEGER NOT NULL REFERENCES products(id),
     quantity   INTEGER NOT NULL,
-    unit_price REAL NOT NULL
+    unit_price DOUBLE PRECISION NOT NULL
 );
 
 CREATE TABLE marketing_campaigns (
@@ -60,7 +60,7 @@ CREATE TABLE marketing_campaigns (
     channel    TEXT NOT NULL,
     start_date DATE NOT NULL,
     end_date   DATE NOT NULL,
-    spend      REAL NOT NULL
+    spend      DOUBLE PRECISION NOT NULL
 );
 
 CREATE TABLE support_tickets (
@@ -73,27 +73,32 @@ CREATE TABLE support_tickets (
 );
 """
 
-_PLACEHOLDERS = {t: ", ".join(["?"] * len(cols)) for t, cols in demo_dataset.COLUMNS.items()}
+_PLACEHOLDERS = {t: ", ".join(["%s"] * len(cols)) for t, cols in demo_dataset.COLUMNS.items()}
 
 
-def seed(db_path: str) -> None:
-    if os.path.exists(db_path):
-        os.remove(db_path)
-    os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+def seed(dsn: str) -> None:
+    import psycopg  # lazy: only needed when seeding Postgres
 
     data = demo_dataset.build_dataset()
-    conn = sqlite3.connect(db_path)
-    try:
-        conn.executescript(SCHEMA)
-        for table, rows in data.items():
-            conn.executemany(f"INSERT INTO {table} VALUES ({_PLACEHOLDERS[table]})", rows)
+    with psycopg.connect(dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute(SCHEMA)
+            for table, rows in data.items():
+                cur.executemany(
+                    f"INSERT INTO {table} VALUES ({_PLACEHOLDERS[table]})", rows
+                )
         conn.commit()
-        print(f"Seeded demo database at {db_path}")
-        for table, rows in data.items():
-            print(f"  {table:<20} {len(rows)} rows")
-    finally:
-        conn.close()
+
+    print("Seeded Postgres demo database")
+    for table, rows in data.items():
+        print(f"  {table:<20} {len(rows)} rows")
 
 
 if __name__ == "__main__":
-    seed(settings.demo_db_path)
+    if not settings.postgres_url:
+        print(
+            "POSTGRES_DATABASE_URL (or DATABASE_URL) is not set. Export it and re-run.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    seed(settings.postgres_url)

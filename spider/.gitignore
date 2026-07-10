@@ -1,0 +1,9 @@
+# Spider data is Yale-licensed and downloaded manually — never commit it.
+database/
+dev.json
+tables.json
+*.sqlite
+
+# Evaluation outputs are produced locally from a real Spider run.
+results.json
+results.md

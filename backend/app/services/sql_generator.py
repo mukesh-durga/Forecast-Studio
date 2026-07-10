@@ -2,10 +2,11 @@
 
 Turns a natural-language question into a single grounded SELECT statement.
 
-The default backend is a **free, deterministic, offline** rule-based generator
-(`LocalSqlGenerator`) — no API key, no network, no paid dependency. It maps a
-set of common analytics questions to SQL templates that only reference the real
-tables and columns of the demo schema.
+The default backend is a **free, deterministic, offline** generator
+(`LocalSqlGenerator`) — no API key, no network, no paid dependency. It renders
+SQL clause-by-clause from the structured ``QueryPlan`` produced by
+``planner_service`` (tables, joins, measures, dimensions, filters, group_by,
+order_by, limit), so every query is grounded in the real schema.
 
 The `SqlGenerator` interface is intentionally provider-agnostic so a real LLM
 backend can be added later without touching the route or the safety guard. This
@@ -17,10 +18,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Optional
 
 from app.config import settings
-from app.models.responses import SchemaResponse
+from app.models.responses import QueryPlan, SchemaResponse
 
 
 # Marker intent + user-facing message for questions the local generator can't
@@ -54,6 +55,15 @@ class GeneratedSql:
     sql: str
     intent: Optional[str] = None  # matched template name, or "unsupported"
     matched: bool = True          # False when no known template matched
+    prompt_tokens: int = 0        # estimated (Groq only; 0 for local/cache)
+    completion_tokens: int = 0    # estimated (Groq only)
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token estimate (~4 chars/token). Used for Groq cost telemetry."""
+    if not text:
+        return 0
+    return max(1, (len(text) + 3) // 4)
 
 
 class SqlGenerator(ABC):
@@ -63,8 +73,14 @@ class SqlGenerator(ABC):
     backend_name: str = "unknown"
 
     @abstractmethod
-    def generate(self, question: str, schema: SchemaResponse) -> GeneratedSql:
-        """Produce SQL for a question, grounded in the given schema."""
+    def generate(
+        self, question: str, schema: SchemaResponse, plan: Optional[QueryPlan] = None
+    ) -> GeneratedSql:
+        """Produce SQL for a question, grounded in the given schema.
+
+        ``plan`` is the structured query plan (from ``planner_service``). When
+        not provided, the generator builds one itself.
+        """
 
 
 def format_schema(schema: SchemaResponse) -> str:
@@ -95,10 +111,16 @@ Rules:
 """
 
 
-def build_user_prompt(question: str, schema: SchemaResponse) -> str:
+def build_user_prompt(
+    question: str, schema: SchemaResponse, plan: Optional[QueryPlan] = None
+) -> str:
+    plan_block = ""
+    if plan is not None:
+        plan_block = f"Query plan (guidance):\n{plan.model_dump_json(indent=2)}\n\n"
     return (
         f"Database dialect: {schema.dialect}\n\n"
         f"Schema:\n{format_schema(schema)}\n\n"
+        f"{plan_block}"
         f"Question: {question}\n\n"
         "Return only the SQL SELECT statement."
     )
@@ -117,147 +139,54 @@ def _extract_sql(text: str) -> str:
 
 # --- Local, deterministic generator -----------------------------------------
 
-# Revenue is derived from order_items: quantity * unit_price.
-_TOP_PRODUCTS = (
-    "SELECT p.name AS product_name, "
-    "SUM(oi.quantity * oi.unit_price) AS revenue "
-    "FROM order_items oi JOIN products p ON p.id = oi.product_id "
-    "GROUP BY p.name ORDER BY revenue DESC LIMIT 5"
-)
-_CITY_MOST_CUSTOMERS = (
-    "SELECT city, COUNT(*) AS customer_count "
-    "FROM customers GROUP BY city ORDER BY customer_count DESC LIMIT 1"
-)
-_REVENUE_BY_MONTH = (
-    "SELECT strftime('%Y-%m', o.order_date) AS month, "
-    "SUM(oi.quantity * oi.unit_price) AS revenue "
-    "FROM orders o JOIN order_items oi ON oi.order_id = o.id "
-    "GROUP BY month ORDER BY month"
-)
-_CATEGORY_REVENUE = (
-    "SELECT p.category, SUM(oi.quantity * oi.unit_price) AS revenue "
-    "FROM order_items oi JOIN products p ON p.id = oi.product_id "
-    "GROUP BY p.category ORDER BY revenue DESC LIMIT 1"
-)
-_AVERAGE_ORDER_VALUE = (
-    "SELECT SUM(oi.quantity * oi.unit_price) / COUNT(DISTINCT o.id) "
-    "AS average_order_value "
-    "FROM orders o JOIN order_items oi ON oi.order_id = o.id"
-)
-_TOP_CUSTOMERS_BY_ORDERS = (
-    "SELECT c.name AS customer_name, COUNT(o.id) AS order_count "
-    "FROM customers c JOIN orders o ON o.customer_id = c.id "
-    "GROUP BY c.id, c.name ORDER BY order_count DESC LIMIT 5"
-)
-_OPEN_TICKETS = (
-    "SELECT COUNT(*) AS open_tickets "
-    "FROM support_tickets WHERE status = 'open'"
-)
-_LOWEST_SATISFACTION_ISSUE = (
-    "SELECT issue_type, AVG(satisfaction_score) AS avg_satisfaction "
-    "FROM support_tickets WHERE satisfaction_score IS NOT NULL "
-    "GROUP BY issue_type ORDER BY avg_satisfaction ASC LIMIT 1"
-)
-_TOP_CHANNEL_BY_SPEND = (
-    "SELECT channel, SUM(spend) AS total_spend "
-    "FROM marketing_campaigns GROUP BY channel ORDER BY total_spend DESC LIMIT 1"
-)
+
+def render_sql_from_plan(plan: QueryPlan) -> str:
+    """Render one SELECT statement from a matched, structured ``QueryPlan``.
+
+    The SQL is assembled clause-by-clause from the plan's structured fields
+    (dimensions/measures -> SELECT, required_tables + joins -> FROM/JOIN,
+    filters -> WHERE, group_by, order_by, limit) — no per-question string
+    templates. Callers must still pass the result through the safety guard.
+    """
+    select_list = ", ".join(plan.dimensions + plan.measures)
+    sql = f"SELECT {select_list} FROM {plan.required_tables[0]}"
+    # One join condition per additional table, in plan order.
+    for table, condition in zip(plan.required_tables[1:], plan.joins):
+        sql += f" JOIN {table} ON {condition}"
+    if plan.filters:
+        sql += " WHERE " + " AND ".join(plan.filters)
+    if plan.group_by:
+        sql += " GROUP BY " + ", ".join(plan.group_by)
+    if plan.order_by:
+        sql += " ORDER BY " + ", ".join(plan.order_by)
+    if plan.limit is not None:
+        sql += f" LIMIT {plan.limit}"
+    return sql
 
 
-@dataclass
-class _Rule:
-    intent: str
-    matches: Callable[[str], bool]
-    sql: str
+def _ensure_plan(question: str, schema: SchemaResponse, plan: Optional[QueryPlan]) -> QueryPlan:
+    if plan is not None:
+        return plan
+    from app.services.planner_service import create_plan  # lazy: avoid import cycle
 
-
-# Ordered most-specific first; the first matching rule wins.
-_RULES: list[_Rule] = [
-    _Rule(
-        "category_revenue",
-        lambda n: "category" in n and "revenue" in n,
-        _CATEGORY_REVENUE,
-    ),
-    _Rule(
-        "monthly_revenue",
-        lambda n: "month" in n and ("revenue" in n or "trend" in n),
-        _REVENUE_BY_MONTH,
-    ),
-    _Rule(
-        "top_products_by_revenue",
-        lambda n: "product" in n and "revenue" in n and ("top" in n or "best" in n),
-        _TOP_PRODUCTS,
-    ),
-    _Rule(
-        "average_order_value",
-        lambda n: ("average" in n or "avg" in n) and "order" in n,
-        _AVERAGE_ORDER_VALUE,
-    ),
-    _Rule(
-        "top_customers_by_orders",
-        lambda n: "customer" in n and "order" in n and ("most" in n or "placed" in n),
-        _TOP_CUSTOMERS_BY_ORDERS,
-    ),
-    _Rule(
-        "city_most_customers",
-        lambda n: "city" in n and "customer" in n,
-        _CITY_MOST_CUSTOMERS,
-    ),
-    _Rule(
-        "open_tickets",
-        lambda n: "ticket" in n and "open" in n,
-        _OPEN_TICKETS,
-    ),
-    _Rule(
-        "lowest_satisfaction_issue",
-        lambda n: "issue" in n and ("satisfaction" in n or "score" in n),
-        _LOWEST_SATISFACTION_ISSUE,
-    ),
-    _Rule(
-        "top_channel_by_spend",
-        lambda n: ("channel" in n or "marketing" in n) and ("spend" in n or "spent" in n),
-        _TOP_CHANNEL_BY_SPEND,
-    ),
-]
+    return create_plan(question, schema)
 
 
 class LocalSqlGenerator(SqlGenerator):
-    """Free, offline, deterministic generator based on keyword rules."""
+    """Free, offline, deterministic generator: renders SQL from the query plan."""
 
     backend_name = "local"
 
-    def generate(self, question: str, schema: SchemaResponse) -> GeneratedSql:
-        norm = question.lower().strip()
+    def generate(
+        self, question: str, schema: SchemaResponse, plan: Optional[QueryPlan] = None
+    ) -> GeneratedSql:
+        plan = _ensure_plan(question, schema, plan)
+        if plan.matched and plan.measures and plan.required_tables:
+            return GeneratedSql(sql=render_sql_from_plan(plan), intent=plan.intent, matched=True)
 
-        table_names = {t.name for t in schema.tables}
-        for rule in _RULES:
-            if rule.matches(norm):
-                # Only use a template if the schema actually has its tables.
-                if _tables_in(rule.sql, table_names):
-                    return GeneratedSql(sql=rule.sql, intent=rule.intent, matched=True)
-
-        # No confident match: produce NO executable SQL. The caller must not
-        # execute this; it should return an honest "unsupported" response.
+        # No confident plan: produce NO executable SQL. The caller returns an
+        # honest "unsupported" response.
         return GeneratedSql(sql="", intent=UNSUPPORTED_INTENT, matched=False)
-
-
-# Demo tables referenced by the templates. Used to verify a template is valid
-# against the connected schema before returning it.
-_TEMPLATE_TABLES = (
-    "customers",
-    "products",
-    "orders",
-    "order_items",
-    "support_tickets",
-    "marketing_campaigns",
-)
-
-
-def _tables_in(sql: str, available: set[str]) -> bool:
-    """Return True if every demo table the template *could* reference exists."""
-    lowered = sql.lower()
-    referenced = [t for t in _TEMPLATE_TABLES if t in lowered]
-    return all(t in available for t in referenced)
 
 
 # --- Optional Groq provider (falls back to local on any problem) ------------
@@ -284,16 +213,21 @@ class GroqSqlGenerator(SqlGenerator):
         self._fallback = fallback
         self._timeout = timeout
 
-    def generate(self, question: str, schema: SchemaResponse) -> GeneratedSql:
+    def generate(
+        self, question: str, schema: SchemaResponse, plan: Optional[QueryPlan] = None
+    ) -> GeneratedSql:
+        plan = _ensure_plan(question, schema, plan)
+        user_prompt = build_user_prompt(question, schema, plan)
         try:
-            raw = self._complete(build_user_prompt(question, schema))
+            # Groq receives the structured plan + schema context.
+            raw = self._complete(user_prompt)
         except Exception:
             # Network error, timeout, rate limit, bad key, SDK missing, etc.
-            return self._fallback.generate(question, schema)
+            return self._fallback.generate(question, schema, plan)
 
         sql = _extract_sql(raw)
         if not sql:
-            return self._fallback.generate(question, schema)
+            return self._fallback.generate(question, schema, plan)
 
         # 1. Groq output MUST pass the same safety guard. Reject -> fall back.
         from app.services.sql_guard import SqlGuardError, validate_sql
@@ -301,7 +235,7 @@ class GroqSqlGenerator(SqlGenerator):
         try:
             safe_sql = validate_sql(sql)
         except SqlGuardError:
-            return self._fallback.generate(question, schema)
+            return self._fallback.generate(question, schema, plan)
 
         # 2. It must also be GROUNDED in the real schema (references a real
         #    table, no placeholder/constant SELECT). Reject -> fall back.
@@ -309,9 +243,15 @@ class GroqSqlGenerator(SqlGenerator):
 
         table_names = {t.name for t in schema.tables}
         if not is_grounded(safe_sql, table_names):
-            return self._fallback.generate(question, schema)
+            return self._fallback.generate(question, schema, plan)
 
-        return GeneratedSql(sql=safe_sql, intent=GROQ_INTENT, matched=True)
+        return GeneratedSql(
+            sql=safe_sql,
+            intent=GROQ_INTENT,
+            matched=True,
+            prompt_tokens=estimate_tokens(SQL_SYSTEM_PROMPT + "\n" + user_prompt),
+            completion_tokens=estimate_tokens(raw),
+        )
 
     def _complete(self, user_prompt: str) -> str:
         """Call Groq chat completions. Imported lazily so 'local' never needs it."""

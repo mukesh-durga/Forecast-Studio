@@ -13,3 +13,4 @@ class GenerateSqlRequest(BaseModel):
 class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1, description="Plain-English question")
     connection_id: str = "demo"
+    show_debug: bool = False  # include the structured query plan in the response
