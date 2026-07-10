@@ -26,6 +26,7 @@ def _telemetry() -> Telemetry:
 def _seed(
     *, connection_id="demo", question, intent, schema_version="sig-a",
     verified=True, sql="SELECT 1 AS a LIMIT 5",
+    required_tables=None, expected_columns=None,
 ):
     """Insert one query_history row for cache unit tests."""
     history_service.record(
@@ -34,6 +35,7 @@ def _seed(
         generated_sql=sql, intent=intent, schema_version=schema_version,
         row_count=1, verified=verified, cache_hit=False, telemetry=_telemetry(),
         confidence=0.9 if verified else 0.0, runtime_ms=1.0,
+        required_tables=required_tables, expected_columns=expected_columns,
     )
 
 
@@ -90,6 +92,72 @@ def test_near_duplicate_cache_hit(client):
     assert second["cache_hit"] is True
     assert second["sql"] == first["sql"]
     assert second["generator"] == "cache"
+
+
+def test_paraphrase_same_intent_is_a_structural_cache_hit(client):
+    """A lexically different paraphrase of a supported question reuses the prior
+    verified SQL via structural match (same intent + tables + expected columns),
+    even though its Jaccard score is below the semantic threshold."""
+    first = client.post(
+        "/query", json={"question": "What are the top 5 products by revenue?"}
+    ).json()
+    assert first["intent"] == "top_products_by_revenue"
+    assert first["cache_hit"] is False
+
+    second = client.post(
+        "/query",
+        json={
+            "question": "Which products generated the highest sales revenue?",
+            "show_debug": True,
+        },
+    ).json()
+    assert second["matched"] is True
+    assert second["intent"] == "top_products_by_revenue"
+    assert second["verification"]["verified"] is True
+    # Reused from cache — and reported honestly.
+    assert second["cache_hit"] is True
+    assert second["generator"] == "cache"
+    assert second["sql"] == first["sql"]
+    assert second["cached_from_question"] == "What are the top 5 products by revenue?"
+    # Actual (below-threshold) token-overlap score is reported, not a fake 1.0.
+    assert 0.0 < second["cache_match_score"] < 0.85
+
+
+def test_structural_reuse_requires_same_intent(client):
+    """A different intent never reuses another intent's cached SQL."""
+    client.post("/query", json={"question": "What are the top 5 products by revenue?"})
+    other = client.post(
+        "/query", json={"question": "Which city has the most customers?"}
+    ).json()
+    assert other["cache_hit"] is False
+    assert other["intent"] == "city_most_customers"
+
+
+def test_unsupported_question_does_not_cache_hit(client):
+    # Prime the cache with a supported question first.
+    client.post("/query", json={"question": "What are the top 5 products by revenue?"})
+    weather = client.post("/query", json={"question": "What is the weather tomorrow?"}).json()
+    assert weather["matched"] is False
+    assert weather["sql"] is None
+    assert weather["cache_hit"] is False
+    # A second unsupported question also never hits the cache.
+    joke = client.post("/query", json={"question": "Tell me a joke"}).json()
+    assert joke["matched"] is False
+    assert joke["cache_hit"] is False
+
+
+def test_close_paraphrase_semantic_cache_hit(client):
+    """A closely-worded near-duplicate DOES clear the threshold and is reused."""
+    first = client.post(
+        "/query", json={"question": "What are the top 5 products by revenue?"}
+    ).json()
+    # Only stopwords differ -> identical content tokens -> Jaccard 1.0 -> reuse.
+    second = client.post(
+        "/query", json={"question": "Show me the top 5 products by revenue"}
+    ).json()
+    assert second["cache_hit"] is True
+    assert second["intent"] == "top_products_by_revenue"
+    assert second["sql"] == first["sql"]
 
 
 def test_different_question_is_not_a_cache_hit(client):
@@ -182,6 +250,45 @@ def test_semantic_partial_overlap_hit_reports_source_and_score():
     assert hit.kind == "semantic"
     assert 0.85 <= hit.similarity < 1.0
     assert hit.source_question == stored_q
+
+
+def test_structural_reuse_below_threshold_same_intent_tables_columns():
+    """Low lexical overlap, but same intent + tables + expected columns -> reuse,
+    reporting the ACTUAL (low) score, not a fabricated 1.0."""
+    _seed(
+        question="alpha bravo charlie delta echo",
+        intent="top_products_by_revenue",
+        required_tables=["order_items", "products"],
+        expected_columns=["product_name", "revenue"],
+    )
+    hit = history_service.find_cached(
+        "demo",
+        history_service.normalize("whiskey xray yankee zulu"),  # Jaccard 0 vs seed
+        "sig-a", 0.85, intent="top_products_by_revenue",
+        required_tables=["order_items", "products"],
+        expected_columns=["product_name", "revenue"],
+    )
+    assert hit is not None
+    assert hit.kind == "intent"
+    assert hit.similarity < 0.85
+    assert hit.source_question == "alpha bravo charlie delta echo"
+
+
+def test_structural_reuse_requires_matching_tables_and_columns():
+    """Same intent but different expected columns must NOT structurally reuse."""
+    _seed(
+        question="alpha bravo charlie",
+        intent="top_products_by_revenue",
+        required_tables=["order_items", "products"],
+        expected_columns=["product_name", "revenue"],
+    )
+    hit = history_service.find_cached(
+        "demo", history_service.normalize("delta echo foxtrot"),
+        "sig-a", 0.85, intent="top_products_by_revenue",
+        required_tables=["order_items", "products"],
+        expected_columns=["product_name", "units_sold"],  # different columns
+    )
+    assert hit is None
 
 
 def test_semantic_below_threshold_is_a_miss():

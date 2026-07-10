@@ -62,6 +62,38 @@ def test_plan_fields(schema, question, intent, tables, measure, expected_cols):
     assert plan.limit is None or isinstance(plan.limit, int)
 
 
+TOP_PRODUCTS_PARAPHRASES = [
+    "top products by revenue",
+    "Which products made the most revenue?",
+    "Which products generated the highest sales revenue?",
+    "best-selling products by revenue",
+    "highest revenue products",
+    "products with most sales revenue",
+]
+
+
+@pytest.mark.parametrize("question", TOP_PRODUCTS_PARAPHRASES)
+def test_top_products_paraphrases_map_to_intent(schema, question):
+    plan = planner_service.create_plan(question, schema)
+    assert plan.matched is True
+    assert plan.intent == "top_products_by_revenue"
+    assert plan.expected_result_columns == ["product_name", "revenue"]
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What is the weather tomorrow?",
+        "Tell me a joke",
+        "Which products are red?",           # products but no revenue/ranking
+        "How much revenue did we make?",     # revenue but no product + ranking
+    ],
+)
+def test_non_top_products_questions_stay_unsupported(schema, question):
+    plan = planner_service.create_plan(question, schema)
+    assert plan.intent != "top_products_by_revenue"
+
+
 def test_plan_has_join_and_order_by_for_top_products(schema):
     plan = planner_service.create_plan("top 5 products by revenue", schema)
     assert plan.joins == ["order_items.product_id = products.id"]

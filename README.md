@@ -221,11 +221,17 @@ confidence, runtime, provider, schema signature, and cache-hit flag.
 On each request the backend first tries the cache:
 
 1. **Exact match** — the question is normalized (lowercased, punctuation
-   stripped, whitespace collapsed) and looked up directly.
+   stripped, whitespace collapsed) and looked up directly (score `1.0`).
 2. **Semantic near-duplicate** — the question is tokenized, stopwords are
    removed, and **Jaccard similarity** is computed against prior questions. If the
    best match is at or above `SEMANTIC_CACHE_THRESHOLD` (default **0.85**), its SQL
    is reused.
+3. **Structural (intent) match** — a paraphrase can be lexically very different
+   yet ask the same thing (e.g. *"top 5 products by revenue"* vs *"which products
+   generated the highest sales revenue?"*). When a prior verified query shares the
+   same **intent**, **required tables**, and **expected result columns**, its SQL
+   is reused even if the Jaccard score is below the threshold — and the response
+   reports the **actual** (lower) score, never a fabricated one.
 
 A cached entry is reused **only** when it shares the same **intent**,
 **connection_id**, and **schema signature** as the incoming question **and** its
@@ -293,7 +299,7 @@ Safety is the core design goal of this project:
 ## Evaluation
 
 An in-process harness ([`scripts/run_eval.py`](scripts/run_eval.py)) runs a
-35-question set ([`eval/questions.json`](eval/questions.json)) — 27 supported
+39-question set ([`eval/questions.json`](eval/questions.json)) — 31 supported
 analytics questions (with paraphrases) and 8 unsupported ones — through the
 backend pipeline and records real metrics. Latest run (local provider):
 

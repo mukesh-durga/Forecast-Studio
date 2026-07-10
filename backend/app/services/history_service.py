@@ -3,8 +3,11 @@
 Stores every executed query in a small SQLite ``query_history`` table (separate
 from the read-only demo databases) and answers cache lookups:
 
-  1. exact match on the normalized question, then
-  2. near-duplicate match via Jaccard similarity on content tokens.
+  1. exact match on the normalized question,
+  2. near-duplicate match via Jaccard similarity on content tokens, then
+  3. structural match — same planner intent + required tables + expected result
+     columns — which reuses a verified prior query even when the wording (and
+     Jaccard score) differ, while still reporting the actual score.
 
 A cached SQL is only reused when the incoming question shares the same
 connection_id, schema_version (schema signature), and intent, and the cached
@@ -15,6 +18,7 @@ prior result all invalidate the reuse.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -41,7 +45,7 @@ _STOPWORDS = {
 class CacheEntry:
     sql: str
     intent: Optional[str]
-    kind: str              # "exact" | "semantic"
+    kind: str              # "exact" | "semantic" | "intent" (structural match)
     similarity: float
     source_question: str   # the original question this cached SQL came from
 
@@ -88,6 +92,8 @@ _ADDED_COLUMNS = {
     "estimated_cost_usd": "REAL",
     "confidence": "REAL",
     "runtime_ms": "REAL",
+    "required_tables": "TEXT",     # JSON list — from the plan (for structural reuse)
+    "expected_columns": "TEXT",    # JSON list — from the plan (for structural reuse)
 }
 
 
@@ -119,7 +125,9 @@ def _connect() -> sqlite3.Connection:
             repair_attempted    INTEGER,
             prompt_tokens       INTEGER,
             completion_tokens   INTEGER,
-            estimated_cost_usd  REAL
+            estimated_cost_usd  REAL,
+            required_tables     TEXT,
+            expected_columns    TEXT
         )
         """
     )
@@ -145,6 +153,8 @@ def record(
     telemetry: Telemetry,
     confidence: float = 0.0,
     runtime_ms: float = 0.0,
+    required_tables: Optional[list[str]] = None,
+    expected_columns: Optional[list[str]] = None,
 ) -> None:
     """Append a query (with telemetry) to the history table."""
     with _connect() as conn:
@@ -156,8 +166,9 @@ def record(
                 cache_hit, created_at,
                 provider, planner_ms, generation_ms, sample_execution_ms,
                 final_execution_ms, verification_ms, total_ms, repair_attempted,
-                prompt_tokens, completion_tokens, estimated_cost_usd
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                prompt_tokens, completion_tokens, estimated_cost_usd,
+                required_tables, expected_columns
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 connection_id,
@@ -183,6 +194,8 @@ def record(
                 telemetry.estimated_prompt_tokens,
                 telemetry.estimated_completion_tokens,
                 telemetry.estimated_cost_usd,
+                json.dumps(required_tables or []),
+                json.dumps(expected_columns or []),
             ),
         )
         conn.commit()
@@ -194,15 +207,26 @@ def find_cached(
     schema_version: str,
     threshold: float,
     intent: Optional[str],
+    required_tables: Optional[list[str]] = None,
+    expected_columns: Optional[list[str]] = None,
 ) -> Optional[CacheEntry]:
-    """Return a reusable cached entry (exact first, then near-duplicate).
+    """Return a reusable cached entry for a supported question.
 
-    A cached SQL is only reused when it shares the same ``connection_id``,
-    ``schema_version``, and ``intent`` as the incoming question, and the cached
-    result was ``verified``. An unmatched intent (``None``) never hits the cache.
+    Reuse is only ever considered across rows sharing the same ``connection_id``,
+    ``schema_version``, and ``intent`` whose prior result was ``verified``. An
+    unmatched intent (``None``) never hits the cache. Given those guarantees,
+    match order is:
+
+      1. **exact** — same normalized question (score 1.0);
+      2. **semantic** — best token Jaccard >= ``threshold``;
+      3. **intent (structural)** — same required tables + expected result
+         columns as the incoming plan; reused even when Jaccard is below the
+         threshold, with the *actual* (lower) score reported.
     """
     if not intent:
         return None
+    required_tables = required_tables or []
+    expected_columns = expected_columns or []
 
     with _connect() as conn:
         conn.row_factory = sqlite3.Row
@@ -225,10 +249,11 @@ def find_cached(
                 kind="exact", similarity=1.0, source_question=exact["question"],
             )
 
-        # 2. Near-duplicate: only verified rows of the SAME intent are candidates.
+        # Candidates: verified rows of the SAME intent (most recent first).
         rows = conn.execute(
             """
-            SELECT question, normalized_question, generated_sql, intent
+            SELECT question, normalized_question, generated_sql, intent,
+                   required_tables, expected_columns
             FROM query_history
             WHERE connection_id = ? AND schema_version = ? AND intent = ?
               AND verified = 1
@@ -239,17 +264,38 @@ def find_cached(
         ).fetchall()
 
     q_tokens = content_tokens(normalized_question)
+    want_tables = sorted(required_tables)
+    want_cols = sorted(expected_columns)
+
     best: Optional[sqlite3.Row] = None
     best_sim = 0.0
+    struct: Optional[sqlite3.Row] = None
+    struct_sim = -1.0
     for r in rows:
         sim = jaccard(q_tokens, content_tokens(r["normalized_question"]))
         if sim > best_sim:
             best_sim, best = sim, r
+        # Structural candidate: same required tables + expected result columns.
+        if want_tables and want_cols:
+            r_tables = sorted(json.loads(r["required_tables"] or "[]"))
+            r_cols = sorted(json.loads(r["expected_columns"] or "[]"))
+            if r_tables == want_tables and r_cols == want_cols and sim > struct_sim:
+                struct_sim, struct = sim, r
 
+    # 2. Near-duplicate above threshold.
     if best is not None and best_sim >= threshold:
         return CacheEntry(
             sql=best["generated_sql"], intent=best["intent"],
             kind="semantic", similarity=round(best_sim, 3),
             source_question=best["question"],
+        )
+
+    # 3. Structural reuse: same intent + tables + expected columns, even if the
+    #    lexical similarity is lower. Report the ACTUAL token-overlap score.
+    if struct is not None:
+        return CacheEntry(
+            sql=struct["generated_sql"], intent=struct["intent"],
+            kind="intent", similarity=round(max(struct_sim, 0.0), 3),
+            source_question=struct["question"],
         )
     return None

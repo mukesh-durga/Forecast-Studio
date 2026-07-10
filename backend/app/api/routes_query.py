@@ -177,6 +177,8 @@ def run_query(
         cached = history_service.find_cached(
             request.connection_id, normalized, schema_ver,
             settings.semantic_cache_threshold, plan.intent,
+            required_tables=plan.required_tables,
+            expected_columns=plan.expected_result_columns,
         )
         if cached is not None:
             cache_hit = True
@@ -303,6 +305,8 @@ def run_query(
         schema_version=schema_ver, row_count=query_result.row_count,
         verified=verification.verified, cache_hit=cache_hit, telemetry=telemetry,
         confidence=verification.confidence, runtime_ms=query_result.runtime_ms,
+        required_tables=plan.required_tables,
+        expected_columns=plan.expected_result_columns,
     )
 
     return QueryResponse(

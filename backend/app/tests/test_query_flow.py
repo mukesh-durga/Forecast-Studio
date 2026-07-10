@@ -102,6 +102,24 @@ def test_supported_question_still_executes_and_verifies(client):
     assert body["sql"] and "LIMIT" in body["sql"]
 
 
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Which products made the most revenue?",
+        "Which products generated the highest sales revenue?",
+    ],
+)
+def test_top_products_paraphrases_end_to_end(client, question):
+    resp = client.post("/query", json={"question": question, "connection_id": "demo"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["matched"] is True
+    assert body["intent"] == "top_products_by_revenue"
+    assert body["columns"] == ["product_name", "revenue"]
+    assert body["sql"] and body["sql"].strip().upper().startswith("SELECT")
+    assert 1 <= body["row_count"] <= 5
+
+
 def test_supported_sql_and_explanation_spacing(client):
     """Endpoint-level regression (TestClient -> POST /query): the live response
     SQL and verification explanation must be naturally spaced."""

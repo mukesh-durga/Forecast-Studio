@@ -25,11 +25,24 @@ from typing import Callable
 
 from app.models.responses import QueryPlan, SchemaResponse
 
+# Words that signal a "highest / ranked" intent. Shared by the ranking matchers.
+_RANKING_WORDS = (
+    "top", "best", "most", "highest", "largest", "leading", "biggest", "greatest",
+)
+
+
+def _ranked(n: str) -> bool:
+    return any(w in n for w in _RANKING_WORDS)
+
+
 # Intent matchers, ordered most-specific first (first match wins).
 _MATCHERS: list[tuple[str, Callable[[str], bool]]] = [
     ("category_revenue", lambda n: "category" in n and "revenue" in n),
     ("monthly_revenue", lambda n: "month" in n and ("revenue" in n or "trend" in n)),
-    ("top_products_by_revenue", lambda n: "product" in n and "revenue" in n and ("top" in n or "best" in n)),
+    # "product(s)" + "revenue" ranked highest — covers paraphrases like "products
+    # that made the most revenue", "highest sales revenue", "best-selling ... by
+    # revenue". The "revenue" gate keeps non-analytics questions unsupported.
+    ("top_products_by_revenue", lambda n: "product" in n and "revenue" in n and _ranked(n)),
     ("average_order_value", lambda n: ("average" in n or "avg" in n) and "order" in n),
     ("top_customers_by_orders", lambda n: "customer" in n and "order" in n and ("most" in n or "placed" in n)),
     ("city_most_customers", lambda n: "city" in n and "customer" in n),
