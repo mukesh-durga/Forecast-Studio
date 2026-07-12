@@ -1,6 +1,6 @@
 # Forecast Studio — Evaluation Results
 
-_Generated: 2026-07-10T07:27:08+00:00 · Dataset: 39 questions (31 supported, 8 unsupported) · Provider: local (deterministic)_
+_Generated: 2026-07-12T03:34:26+00:00 · Dataset: 39 questions (31 supported, 8 unsupported) · Provider: local (deterministic)_
 
 ## Metrics
 
@@ -22,7 +22,7 @@ _Generated: 2026-07-10T07:27:08+00:00 · Dataset: 39 questions (31 supported, 8 
 
 | Mode | Avg latency | Avg est. cost (USD) | Verification |
 |---|---|---|---|
-| Baseline (generate + execute) | 0.125 ms | — | — |
-| Planner + verification (full) | 0.217 ms | $0.0 | 100.0% pass |
+| Baseline (generate + execute) | 0.127 ms | — | — |
+| Planner + verification (full) | 0.226 ms | $0.0 | 100.0% pass |
 
 _Both modes use the same schema-grounded local generator; the full mode adds the verification loop. Numbers are measured by `scripts/run_eval.py`._

@@ -217,6 +217,14 @@ export default function Home() {
                 <div className="flex min-w-0 animate-fade-in flex-col gap-6">
                   <AnswerCard result={result} />
                   <MetadataBar result={result} />
+                  {result.generic_mode_used && (
+                    <p className="-mt-2 flex items-center gap-1.5 text-xs text-slate-500">
+                      <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 text-primary" fill="currentColor" aria-hidden>
+                        <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 4a1 1 0 10-2 0v4a1 1 0 00.4.8l3 2.25a1 1 0 101.2-1.6L11 9.5V6z" />
+                      </svg>
+                      Answered with the generic schema-aware SQL generator (not a predefined template).
+                    </p>
+                  )}
                   {result.cache_hit && result.cached_from_question && (
                     <p className="-mt-2 flex items-center gap-1.5 text-xs text-slate-500">
                       <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 text-primary" fill="currentColor" aria-hidden>

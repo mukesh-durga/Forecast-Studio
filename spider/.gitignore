@@ -4,6 +4,7 @@ dev.json
 tables.json
 *.sqlite
 
-# Evaluation outputs are produced locally from a real Spider run.
+# Evaluation outputs + saved subsets are produced locally from a real Spider run.
 results.json
 results.md
+subsets/

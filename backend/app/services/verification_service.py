@@ -44,6 +44,55 @@ _EXPECTATIONS: dict[str, _Expectation] = {
 }
 
 
+def _verify_generic(
+    cols: set[str], expected_columns: list[str], row_count: int,
+    question: Optional[str], sql: str,
+) -> Verification:
+    """Verify a generic (non-templated) schema-aware answer.
+
+    Beyond structural checks (expected columns present, non-empty), this checks
+    **semantic alignment**: the SQL's tables/columns must fit the question's
+    entities. A query is NOT verified merely because it executed and returned
+    rows (e.g. a customer-spend question answered from ``marketing_campaigns``).
+    """
+    from app.services.generic_generator import semantic_mismatch
+
+    reason = semantic_mismatch(question or "", sql)
+    if reason:
+        return Verification(
+            verified=False, confidence=0.2,
+            explanation=f"The result does not match the question's intent: {reason}.",
+            failure_reason="semantic_mismatch",
+        )
+
+    if row_count == 0:
+        return Verification(
+            verified=False, confidence=0.3,
+            explanation="The generic schema-aware query executed but returned no rows.",
+            failure_reason="no_rows",
+        )
+    want = [c.lower() for c in expected_columns]
+    missing = [c for c in want if c not in cols]
+    if missing:
+        return Verification(
+            verified=False, confidence=0.4,
+            explanation=(
+                f"Result columns {sorted(cols)} do not include the expected "
+                f"column(s) {missing}."
+            ),
+            failure_reason=f"missing_expected_columns: {', '.join(missing)}",
+        )
+    return Verification(
+        verified=True, confidence=0.7,
+        explanation=(
+            f"Generic schema-aware query executed and returned {row_count} row(s) "
+            f"with the expected columns {sorted(want) if want else sorted(cols)}. "
+            "Answer is grounded in the schema but not matched to a predefined template."
+        ),
+        failure_reason=None,
+    )
+
+
 def verify(
     *,
     intent: Optional[str],
@@ -52,9 +101,20 @@ def verify(
     columns: list[str],
     rows: list[dict[str, Any]],
     row_count: int,
+    generic: bool = False,
+    expected_columns: Optional[list[str]] = None,
+    question: Optional[str] = None,
 ) -> Verification:
-    """Return a verification verdict for a query result."""
+    """Return a verification verdict for a query result.
+
+    ``generic=True`` verifies a generic schema-aware answer both structurally
+    (expected columns present, non-empty) and **semantically** (the SQL's tables
+    fit the question) — not merely because rows exist.
+    """
     cols = {c.lower() for c in columns}
+
+    if generic:
+        return _verify_generic(cols, expected_columns or [], row_count, question, sql)
 
     # No known template matched → we cannot confidently verify the answer.
     if not matched or intent is None or intent not in _EXPECTATIONS:

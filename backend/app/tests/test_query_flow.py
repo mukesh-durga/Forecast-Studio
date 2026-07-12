@@ -75,7 +75,8 @@ def test_query_unsupported_question_does_not_execute(client):
     assert body["columns"] == []
     # Verification present, explicitly unverified with the unsupported reason.
     assert body["verification"]["verified"] is False
-    assert body["verification"]["failure_reason"] == "unsupported_question"
+    assert body["verification"]["failure_reason"] == "unsupported_general_question"
+    assert body["generic_mode_used"] is False
     # Exact, naturally-spaced user-facing strings (no missing spaces).
     assert body["message"] == (
         "This local demo currently supports predefined database analytics questions. "

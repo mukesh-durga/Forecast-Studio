@@ -109,6 +109,7 @@ class QueryResponse(BaseModel):
     message: Optional[str] = None     # user-facing note (set for unsupported questions)
     suggestions: list[str] = []       # example questions to try (unsupported questions)
     plan: Optional[QueryPlan] = None  # structured plan; only included when show_debug=true
+    generic_mode_used: bool = False   # True when the generic schema-aware path answered
     cache_hit: bool = False           # True when SQL was reused from the dedup cache
     cache_match_score: float = 0.0    # 1.0 exact, Jaccard for semantic, 0.0 on miss
     cached_from_question: Optional[str] = None  # source question; only when show_debug=true

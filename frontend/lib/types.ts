@@ -60,6 +60,7 @@ export interface QueryResponse {
   message?: string | null; // user-facing note for unsupported questions
   suggestions?: string[]; // example questions to try
   plan?: QueryPlan | null; // structured plan (present when show_debug=true)
+  generic_mode_used?: boolean; // answered via the generic schema-aware path
   cache_hit?: boolean; // true when SQL was reused from the dedup cache
   cache_match_score?: number; // 1.0 exact, Jaccard for semantic, 0.0 on miss
   cached_from_question?: string | null; // source question (present when show_debug=true)

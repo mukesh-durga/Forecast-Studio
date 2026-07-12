@@ -130,4 +130,4 @@ def test_query_unsupported_question_is_unverified(client):
     assert body["intent"] == "unsupported"
     assert body["sql"] is None
     assert body["verification"]["verified"] is False
-    assert body["verification"]["failure_reason"] == "unsupported_question"
+    assert body["verification"]["failure_reason"] == "unsupported_general_question"

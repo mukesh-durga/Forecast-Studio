@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-10T07:27:08+00:00",
+  "generated_at": "2026-07-12T03:34:26+00:00",
   "dataset": {
     "total": 39,
     "supported": 31,
@@ -22,11 +22,11 @@
   },
   "modes": {
     "baseline_no_verification": {
-      "avg_latency_ms": 0.125,
+      "avg_latency_ms": 0.127,
       "verification_pass_rate": null
     },
     "planner_plus_verification": {
-      "avg_latency_ms": 0.217,
+      "avg_latency_ms": 0.226,
       "avg_estimated_cost_usd": 0.0,
       "verification_pass_rate": 100.0
     }
@@ -53,8 +53,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.343,
-      "full_latency_ms": 0.345
+      "baseline_latency_ms": 0.329,
+      "full_latency_ms": 0.339
     },
     {
       "question": "Show me the best products by revenue",
@@ -77,8 +77,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.171,
-      "full_latency_ms": 0.308
+      "baseline_latency_ms": 0.17,
+      "full_latency_ms": 0.311
     },
     {
       "question": "top products by revenue overall",
@@ -101,8 +101,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.17,
-      "full_latency_ms": 0.311
+      "baseline_latency_ms": 0.166,
+      "full_latency_ms": 0.303
     },
     {
       "question": "Which products made the most revenue?",
@@ -125,8 +125,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.185,
-      "full_latency_ms": 0.347
+      "baseline_latency_ms": 0.166,
+      "full_latency_ms": 0.301
     },
     {
       "question": "Which products generated the highest sales revenue?",
@@ -149,8 +149,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.169,
-      "full_latency_ms": 0.303
+      "baseline_latency_ms": 0.164,
+      "full_latency_ms": 0.301
     },
     {
       "question": "best-selling products by revenue",
@@ -173,8 +173,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.164,
-      "full_latency_ms": 0.306
+      "baseline_latency_ms": 0.161,
+      "full_latency_ms": 0.299
     },
     {
       "question": "highest revenue products",
@@ -197,8 +197,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.172,
-      "full_latency_ms": 0.48
+      "baseline_latency_ms": 0.16,
+      "full_latency_ms": 0.299
     },
     {
       "question": "Which city has the most customers?",
@@ -221,8 +221,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.151,
-      "full_latency_ms": 0.237
+      "baseline_latency_ms": 0.136,
+      "full_latency_ms": 0.242
     },
     {
       "question": "Which city has the highest number of customers?",
@@ -245,8 +245,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.122,
-      "full_latency_ms": 0.219
+      "baseline_latency_ms": 0.136,
+      "full_latency_ms": 0.229
     },
     {
       "question": "customers grouped by city",
@@ -269,8 +269,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.192,
-      "full_latency_ms": 0.261
+      "baseline_latency_ms": 0.131,
+      "full_latency_ms": 0.227
     },
     {
       "question": "Which product category generated the highest revenue?",
@@ -294,7 +294,7 @@
       "repair_successful": false,
       "rejected_correctly": null,
       "baseline_latency_ms": 0.186,
-      "full_latency_ms": 0.311
+      "full_latency_ms": 0.393
     },
     {
       "question": "revenue by product category",
@@ -317,8 +317,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.159,
-      "full_latency_ms": 0.291
+      "baseline_latency_ms": 0.203,
+      "full_latency_ms": 0.32
     },
     {
       "question": "top category by revenue",
@@ -341,8 +341,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.158,
-      "full_latency_ms": 0.289
+      "baseline_latency_ms": 0.18,
+      "full_latency_ms": 0.667
     },
     {
       "question": "What was the total revenue by month?",
@@ -365,8 +365,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.19,
-      "full_latency_ms": 0.338
+      "baseline_latency_ms": 0.272,
+      "full_latency_ms": 0.397
     },
     {
       "question": "Show monthly revenue trend.",
@@ -389,8 +389,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.179,
-      "full_latency_ms": 0.332
+      "baseline_latency_ms": 0.193,
+      "full_latency_ms": 0.347
     },
     {
       "question": "revenue by month over time",
@@ -413,8 +413,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.178,
-      "full_latency_ms": 0.332
+      "baseline_latency_ms": 0.191,
+      "full_latency_ms": 0.344
     },
     {
       "question": "What is the average order value?",
@@ -437,8 +437,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.132,
-      "full_latency_ms": 0.239
+      "baseline_latency_ms": 0.141,
+      "full_latency_ms": 0.247
     },
     {
       "question": "average value per order",
@@ -461,8 +461,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.131,
-      "full_latency_ms": 0.235
+      "baseline_latency_ms": 0.132,
+      "full_latency_ms": 0.24
     },
     {
       "question": "avg order value across all orders",
@@ -485,8 +485,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.127,
-      "full_latency_ms": 0.233
+      "baseline_latency_ms": 0.141,
+      "full_latency_ms": 0.251
     },
     {
       "question": "Which customers placed the most orders?",
@@ -509,8 +509,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.145,
-      "full_latency_ms": 0.255
+      "baseline_latency_ms": 0.169,
+      "full_latency_ms": 0.286
     },
     {
       "question": "customers who placed the most orders",
@@ -533,8 +533,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.139,
-      "full_latency_ms": 0.276
+      "baseline_latency_ms": 0.14,
+      "full_latency_ms": 0.253
     },
     {
       "question": "which customer placed the most orders",
@@ -557,8 +557,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.153,
-      "full_latency_ms": 0.268
+      "baseline_latency_ms": 0.139,
+      "full_latency_ms": 0.254
     },
     {
       "question": "How many support tickets are still open?",
@@ -581,8 +581,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.107,
-      "full_latency_ms": 0.186
+      "baseline_latency_ms": 0.108,
+      "full_latency_ms": 0.189
     },
     {
       "question": "count of open tickets",
@@ -605,8 +605,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.101,
-      "full_latency_ms": 0.182
+      "baseline_latency_ms": 0.103,
+      "full_latency_ms": 0.184
     },
     {
       "question": "how many open support tickets are there",
@@ -629,8 +629,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.102,
-      "full_latency_ms": 0.182
+      "baseline_latency_ms": 0.104,
+      "full_latency_ms": 0.184
     },
     {
       "question": "Which issue type has the lowest satisfaction score?",
@@ -653,8 +653,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.126,
-      "full_latency_ms": 0.219
+      "baseline_latency_ms": 0.128,
+      "full_latency_ms": 0.221
     },
     {
       "question": "issue types by satisfaction score",
@@ -677,7 +677,7 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.12,
+      "baseline_latency_ms": 0.121,
       "full_latency_ms": 0.216
     },
     {
@@ -701,8 +701,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.119,
-      "full_latency_ms": 0.231
+      "baseline_latency_ms": 0.121,
+      "full_latency_ms": 0.215
     },
     {
       "question": "What marketing channel had the highest spend?",
@@ -725,8 +725,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.124,
-      "full_latency_ms": 0.221
+      "baseline_latency_ms": 0.117,
+      "full_latency_ms": 0.219
     },
     {
       "question": "channel by total spend",
@@ -749,8 +749,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.121,
-      "full_latency_ms": 0.216
+      "baseline_latency_ms": 0.125,
+      "full_latency_ms": 0.245
     },
     {
       "question": "which marketing channel spent the most",
@@ -773,8 +773,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": null,
-      "baseline_latency_ms": 0.128,
-      "full_latency_ms": 0.219
+      "baseline_latency_ms": 0.129,
+      "full_latency_ms": 0.226
     },
     {
       "question": "What is the weather tomorrow?",
@@ -797,7 +797,7 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": true,
-      "baseline_latency_ms": 0.019,
+      "baseline_latency_ms": 0.022,
       "full_latency_ms": 0.012
     },
     {
@@ -845,7 +845,7 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": true,
-      "baseline_latency_ms": 0.011,
+      "baseline_latency_ms": 0.01,
       "full_latency_ms": 0.01
     },
     {
@@ -869,8 +869,8 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": true,
-      "baseline_latency_ms": 0.011,
-      "full_latency_ms": 0.011
+      "baseline_latency_ms": 0.01,
+      "full_latency_ms": 0.01
     },
     {
       "question": "How do I reset my password?",
@@ -893,7 +893,7 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": true,
-      "baseline_latency_ms": 0.011,
+      "baseline_latency_ms": 0.01,
       "full_latency_ms": 0.01
     },
     {
@@ -941,7 +941,7 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": true,
-      "baseline_latency_ms": 0.011,
+      "baseline_latency_ms": 0.01,
       "full_latency_ms": 0.01
     },
     {
@@ -965,7 +965,7 @@
       "repair_attempted": false,
       "repair_successful": false,
       "rejected_correctly": true,
-      "baseline_latency_ms": 0.011,
+      "baseline_latency_ms": 0.01,
       "full_latency_ms": 0.01
     }
   ]

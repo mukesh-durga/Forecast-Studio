@@ -140,7 +140,7 @@ def test_query_endpoint_weather_question_is_unsupported():
     assert body["rows"] == []
     assert body["columns"] == []
     assert body["verification"]["verified"] is False
-    assert body["verification"]["failure_reason"] == "unsupported_question"
+    assert body["verification"]["failure_reason"] == "unsupported_general_question"
     assert "predefined database analytics questions" in body["message"]
     assert len(body["suggestions"]) > 0
 

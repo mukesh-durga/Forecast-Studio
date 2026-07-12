@@ -46,6 +46,13 @@ it errors, times out, or returns unsafe/ungrounded SQL.
 ## Features
 
 - **Natural-language → SQL** grounded in the live database schema.
+- **Generic schema-aware mode** — when a question doesn't match a predefined
+  intent, a deterministic schema-aware generator attempts a grounded `SELECT`
+  (count, sum/avg/min/max, group-by, order-by + limit, filters, month bucketing,
+  and joins detected from `<x>_id` keys) across the connected SQLite/Postgres
+  schema, so many analytics questions beyond the examples are answered — while
+  weather/general-knowledge questions stay unsupported and write/DDL requests are
+  rejected as unsafe.
 - **Sample self-check loop** — the draft SQL is first run on a small `LIMIT 5`
   sample and checked against the plan (expected columns, shape, non-empty); if it
   fails, one plan-based repair is attempted, re-guarded, and re-checked before the
@@ -83,7 +90,9 @@ User → Next.js frontend → FastAPI backend
                               │                          filters, group/order, confidence)
                               ├─ semantic-dedup cache   (reuse verified SQL for repeat /
                               │                          paraphrased questions)
-                              ├─ SQL generation        (rendered from the plan; optional Groq)
+                              ├─ classifier            (database / general / unsafe)
+                              ├─ SQL generation        (known intent -> local/Groq;
+                              │                          else generic schema-aware SELECT)
                               ├─ SQL safety guard      (SELECT-only, single statement)
                               ├─ schema grounding      (must reference real tables)
                               ├─ sample self-check     (run on LIMIT 5, check vs plan;
@@ -211,6 +220,35 @@ as SQLite, and run in a **read-only transaction with a server-side
 `statement_timeout`**. Credentials stay server-side; the browser only ever sends a
 `connection_id`, never a connection string.
 
+## General schema-aware mode
+
+The app has two generation paths. **Known analytics intents** take the fast path
+(planner + local deterministic generator, or optional Groq). Anything else is
+first **classified**:
+
+- `database_analytics_question` — references the schema (a table/column or a
+  domain term like *revenue*/*sales*) → the **generic schema-aware generator**
+  attempts a single grounded `SELECT`.
+- `unsupported_general_question` — weather, general knowledge, etc. → returned as
+  unsupported with example suggestions (never guessed).
+- `unsafe_question` — contains write/DDL keywords (`delete`, `drop`, `update`, …)
+  → rejected as unsafe; no SQL is generated or run.
+
+The generic generator inspects the connected schema (tables, columns, types,
+primary keys, and `<x>_id` foreign-key naming) and handles common analytics
+shapes: `COUNT`, `SUM`/`AVG`/`MIN`/`MAX`, `GROUP BY`, `ORDER BY` + `LIMIT`, simple
+filters, month bucketing (`strftime` on SQLite, `to_char` on Postgres), and joins
+through detected keys (e.g. `order_items → products` for per-product revenue). It
+emits **SELECT-only** SQL, which then passes the **same guarantees as every other
+query**: SELECT-only guard, single-statement guard, schema-grounding validation, a
+sample execution, and verification — with one repair attempt if the first
+candidate's sample check fails. The response reports `generator: "generic"`,
+`generic_mode_used: true`, and the usual `sample_checked` / `repair_attempted` /
+`repair_successful` flags.
+
+> The generic generator is a deterministic heuristic (no LLM), strongest on the
+> patterns above; genuinely unanswerable questions still return unsupported.
+
 ## Query history & semantic-dedup cache
 
 Every executed query is recorded in a small metadata store (a SQLite
@@ -287,11 +325,14 @@ Safety is the core design goal of this project:
   **PostgreSQL (Neon)** connection is supported (`demo_postgres`, seeded with the
   same dataset) but is opt-in via an environment variable — see "Connect a real
   Postgres database" above.
-- The **default (local) generator answers a fixed set of predefined analytics
-  questions** — it is deterministic rules, not a general text-to-SQL model.
+- Generation is **deterministic (no LLM by default)**: predefined intents use the
+  planner/local generator, and other schema-answerable questions use the generic
+  schema-aware generator (see "General schema-aware mode"). Both are heuristics,
+  not a learned text-to-SQL model, so very complex questions (nested sub-queries,
+  multi-hop joins, value-based text filters) may return unsupported.
 - The **optional Groq provider** can handle open-ended questions, but its answers
-  are shown as *unverified* (the verification loop only recognizes the predefined
-  intents), and it depends on an external API key.
+  are shown as *unverified* (the templated verification loop only recognizes the
+  predefined intents), and it depends on an external API key.
 - **No authentication** — it's a public demo.
 - The eval set below measures the app on its **own supported question set**, not
   a standard text-to-SQL benchmark (see Evaluation).
@@ -337,20 +378,53 @@ project**. Spider is Yale-licensed and downloaded manually — it is not committ
 here, and no results are checked in.
 
 ```bash
-backend/.venv/bin/python scripts/download_spider.py            # checks / prints setup
-export SPIDER_DIR=/path/to/spider                              # dev.json + database/
-backend/.venv/bin/python scripts/run_spider_subset.py --limit 50   # or --limit 10 / 25
+backend/.venv/bin/python scripts/download_spider.py                      # checks / prints setup
+export SPIDER_DIR=/path/to/spider                                        # dev.json + database/
+backend/.venv/bin/python scripts/run_spider_subset.py --limit 50 --seed 42   # or --limit 10 / 25
 ```
 
-For each example the harness loads the example's database schema, generates SQL
-in **baseline** mode (single-shot, schema-grounded) and **full** mode (planner +
-guard + sample self-check + verification + optional repair), executes both the
-predicted and gold SQL, and compares result sets. It writes timestamped
-`spider/results.json` and `spider/results.md` recording the provider and, per
-mode: **execution accuracy, generation validity, unsafe-rejection count,
-wrong-answer-caught count, and latency**. Numbers are measured on the examples
-run — never hardcoded. Note: the default local generator is tuned to the demo
-schema, so meaningful Spider accuracy requires an LLM provider (`SQL_GENERATOR_PROVIDER=groq`).
+The subset is chosen **deterministically** from `--limit N --seed S` and saved to
+`spider/subsets/dev_N_seedS.json`, so a run is reproducible.
+
+A dedicated **schema-aware Spider generator** ([`scripts/spider_generator.py`](scripts/spider_generator.py))
+is used only by this harness (the normal app keeps its demo planner/generator).
+It inspects each database's real tables/columns/types/keys. The harness compares
+two modes per example:
+
+- **baseline** — single-shot schema-aware generation (one candidate, guarded and
+  executed; no value linking, no repair).
+- **full** — schema linking + safe **database value linking** (parameterized,
+  read-only lookups that place real column values into `WHERE` clauses),
+  foreign-key awareness, **multiple candidates** (default 3, `--max-candidates`),
+  guard + execute each, choose the most plausible (gold-free), one **repair** on
+  failure, then verify. Supports count, `DISTINCT`, aggregates, superlative
+  `ORDER BY … LIMIT 1`, `GROUP BY`, numeric/`BETWEEN` filters, and value filters.
+
+Both modes' predicted SQL and the gold SQL are executed and their result sets
+compared (order only when the gold has `ORDER BY`). **Gold SQL is used only for
+scoring, never during generation.** It writes timestamped `spider/results.json` and
+`spider/results.md` recording, per mode: **execution accuracy, valid SQL generation
+rate, execution success rate, unsafe-rejection count, latency, and estimated cost
+($0 — no LLM)**, plus **baseline→full absolute/relative improvement** and **repair**
+counts.
+
+**Wrong-answer detection.** The harness also measures whether the pipeline catches
+executable-but-wrong SQL. A *wrong-but-executable baseline* passed the guard,
+executed, and did not match gold (syntax errors and unsafe rejections are
+explicitly excluded). It is **caught** when the full pipeline either repaired it to
+a gold-matching result or flagged it as implausible (failed verification). The
+report includes `executable_wrong_baseline_count`, `wrong_answers_caught_count`,
+`wrong_answers_caught_rate`, and a **caught-cases** list with baseline/gold/full
+**result hashes** so each catch is verifiable. There is also a **debug list of
+failed examples** (question, db_id, estimated difficulty, gold SQL, baseline & full
+predicted SQL, reason).
+
+Numbers are measured on the examples run — **never hardcoded** — and vary with the
+subset (the heuristic handles single-table patterns and value filters well, and
+multi-table joins / nested sub-queries poorly). Full mode measurably beats the
+single-shot baseline on the seeded subsets, but absolute accuracy stays modest;
+run it yourself and cite your own measured number and subset size rather than a
+fixed figure. Spider data, the saved subsets, and results files are git-ignored.
 
 ## Future improvements
 
