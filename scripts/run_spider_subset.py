@@ -261,12 +261,19 @@ def _failure_reason(full: dict, gold_ok: bool) -> str | None:
 
 # --- Run + report -----------------------------------------------------------
 
-def run_subset(spider_dir: Path, limit: int, seed: int, out_dir: Path,
-               max_candidates: int = _MAX_CANDIDATES) -> dict:
-    all_examples = json.loads((spider_dir / "dev.json").read_text())
-    examples = select_subset(all_examples, limit, seed, out_dir)
+def _evaluate_all(spider_dir: Path, examples: list[dict], max_candidates: int,
+                  progress: bool = False) -> list[dict]:
+    records = []
+    total = len(examples)
+    for i, ex in enumerate(examples, 1):
+        records.append(evaluate_example(ex, spider_dir, max_candidates))
+        if progress and (i % 100 == 0 or i == total):
+            print(f"  … evaluated {i}/{total}", file=sys.stderr)
+    return records
 
-    records = [evaluate_example(ex, spider_dir, max_candidates) for ex in examples]
+
+def _build_results(spider_dir: Path, records: list[dict], dataset: str,
+                   subset_meta: dict) -> dict:
     metrics = spider_eval.aggregate(records)
 
     failures = [
@@ -294,15 +301,28 @@ def run_subset(spider_dir: Path, limit: int, seed: int, out_dir: Path,
 
     caught_cases = [_wrong_answer_debug(r) for r in records if r["caught"]]
 
-    results = {
+    # Per-difficulty execution accuracy (reporting only; gold structure heuristic).
+    by_difficulty: dict[str, dict] = {}
+    for r in records:
+        if not r["gold_ok"]:
+            continue
+        d = by_difficulty.setdefault(r["difficulty"], {"gold_executable": 0, "baseline_correct": 0, "full_correct": 0})
+        d["gold_executable"] += 1
+        d["baseline_correct"] += int(r["baseline"]["correct"])
+        d["full_correct"] += int(r["full"]["correct"])
+    for d, v in by_difficulty.items():
+        v["baseline_accuracy_pct"] = spider_eval.pct(v["baseline_correct"], v["gold_executable"])
+        v["full_accuracy_pct"] = spider_eval.pct(v["full_correct"], v["gold_executable"])
+
+    return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "dataset": "Spider dev (subset)",
+        "dataset": dataset,
         "spider_dir": str(spider_dir),
         "generator": "spider-heuristic",
-        "subset": {"limit": limit, "seed": seed,
-                   "file": f"subsets/dev_{limit}_seed{seed}.json"},
+        "subset": subset_meta,
         "count": len(records),
         "metrics": metrics,
+        "by_difficulty": by_difficulty,
         "failures": failures,
         "wrong_answer_detection": {
             "executable_wrong_baseline_count": metrics["executable_wrong_baseline_count"],
@@ -318,9 +338,36 @@ def run_subset(spider_dir: Path, limit: int, seed: int, out_dir: Path,
             for r in records
         ],
     }
+
+
+def _write_results(results: dict, out_dir: Path, basename: str) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "results.json").write_text(json.dumps(results, indent=2) + "\n")
-    (out_dir / "results.md").write_text(write_markdown(results))
+    (out_dir / f"{basename}.json").write_text(json.dumps(results, indent=2) + "\n")
+    (out_dir / f"{basename}.md").write_text(write_markdown(results))
+
+
+def run_subset(spider_dir: Path, limit: int, seed: int, out_dir: Path,
+               max_candidates: int = _MAX_CANDIDATES) -> dict:
+    all_examples = json.loads((spider_dir / "dev.json").read_text())
+    examples = select_subset(all_examples, limit, seed, out_dir)
+    records = _evaluate_all(spider_dir, examples, max_candidates)
+    results = _build_results(
+        spider_dir, records, "Spider dev (subset)",
+        {"limit": limit, "seed": seed, "file": f"subsets/dev_{limit}_seed{seed}.json", "full": False},
+    )
+    _write_results(results, out_dir, "results")
+    return results
+
+
+def run_full(spider_dir: Path, out_dir: Path, max_candidates: int = _MAX_CANDIDATES) -> dict:
+    """Evaluate the ENTIRE Spider dev set (every example, in file order)."""
+    examples = json.loads((spider_dir / "dev.json").read_text())
+    records = _evaluate_all(spider_dir, examples, max_candidates, progress=True)
+    results = _build_results(
+        spider_dir, records, "Spider dev (full)",
+        {"limit": len(examples), "seed": None, "file": None, "full": True},
+    )
+    _write_results(results, out_dir, "results_full")
     return results
 
 
@@ -328,19 +375,47 @@ def write_markdown(results: dict) -> str:
     m = results["metrics"]
     b, f, impr = m["baseline"], m["full"], m["improvement"]
     sub = results["subset"]
+    full_run = bool(sub.get("full"))
+
+    if full_run:
+        title = "# Forecast Studio — Spider **full dev-set** Evaluation (baseline vs full)"
+        meta = (
+            f"_Generated: {results['generated_at']} · Dataset: **Spider dev (full)** · "
+            f"all {results['count']} dev examples · Generator: {results['generator']}_"
+        )
+        caveat = (
+            "> This is the **entire Spider dev set** (every example in `dev.json`, in file "
+            "order — no sampling). Numbers are the real measured result of a deterministic "
+            "schema-aware heuristic (no LLM); gold SQL is used only for scoring, never during "
+            "generation. This is **not** a state-of-the-art text-to-SQL model — the point is a "
+            "reproducible, honest full-dev baseline and the pipeline's wrong-answer catch rate."
+        )
+        scope_line = "Run over the full dev set (`--full`); nothing is subsampled."
+    else:
+        title = "# Forecast Studio — Spider-subset Evaluation (baseline vs full)"
+        meta = (
+            f"_Generated: {results['generated_at']} · Dataset: **Spider dev (subset)** · "
+            f"{results['count']} examples · seed {sub['seed']} · Generator: {results['generator']}_"
+        )
+        caveat = (
+            "> This is a **subset** of the Spider dev set, not the full benchmark. Numbers "
+            "are measured on the examples run; no full-benchmark claim is made. The generator "
+            "is a deterministic schema-aware heuristic (no LLM). Gold SQL is used only for "
+            "scoring, never during generation."
+        )
+        scope_line = (
+            f"Subset saved to `{sub['file']}` (deterministic for `--limit {sub['limit']} "
+            f"--seed {sub['seed']}`)."
+        )
+
     lines = [
-        "# Forecast Studio — Spider-subset Evaluation (baseline vs full)",
+        title,
         "",
-        f"_Generated: {results['generated_at']} · Dataset: **Spider dev (subset)** · "
-        f"{results['count']} examples · seed {sub['seed']} · Generator: {results['generator']}_",
+        meta,
         "",
-        "> This is a **subset** of the Spider dev set, not the full benchmark. Numbers "
-        "are measured on the examples run; no full-benchmark claim is made. The generator "
-        "is a deterministic schema-aware heuristic (no LLM). Gold SQL is used only for "
-        "scoring, never during generation.",
+        caveat,
         "",
-        f"Subset saved to `{sub['file']}` (deterministic for `--limit {sub['limit']} "
-        f"--seed {sub['seed']}`).",
+        scope_line,
         "",
         "| Metric | Baseline | Full |",
         "|---|---|---|",
@@ -357,6 +432,29 @@ def write_markdown(results: dict) -> str:
         f"{m['repair_attempted_count']} attempted  ",
         f"**Examples / gold-executable:** {b['total']} / {b['gold_executable']}",
         "",
+    ]
+
+    by_diff = results.get("by_difficulty") or {}
+    if by_diff:
+        lines += [
+            "## Accuracy by estimated difficulty",
+            "",
+            "_Difficulty is a heuristic from the gold SQL structure (joins / nesting / set ops), "
+            "for reporting only._",
+            "",
+            "| Difficulty | Gold-executable | Baseline acc | Full acc |",
+            "|---|---|---|---|",
+        ]
+        for d in ("easy", "medium", "hard"):
+            if d in by_diff:
+                v = by_diff[d]
+                lines.append(
+                    f"| {d} | {v['gold_executable']} | {v['baseline_accuracy_pct']}% | "
+                    f"{v['full_accuracy_pct']}% |"
+                )
+        lines.append("")
+
+    lines += [
         "## Wrong-answer detection",
         "",
         "A *wrong-but-executable baseline* passed the guard, executed, and did not "
@@ -398,9 +496,11 @@ def write_markdown(results: dict) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate on a deterministic Spider dev subset.")
-    parser.add_argument("--limit", type=int, default=50, help="number of examples (default 50)")
+    parser = argparse.ArgumentParser(description="Evaluate on the Spider dev set (subset or full).")
+    parser.add_argument("--limit", type=int, default=50, help="number of examples (default 50; ignored with --full)")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed for subset selection (default 42)")
+    parser.add_argument("--full", action="store_true",
+                        help="evaluate the ENTIRE dev set (every example, no sampling)")
     parser.add_argument("--spider-dir", default=None, help="path to the Spider dir (dev.json + database/)")
     parser.add_argument("--out-dir", default=str(REPO / "spider"), help="where to write results")
     parser.add_argument("--max-candidates", type=int, default=_MAX_CANDIDATES,
@@ -413,15 +513,23 @@ def main() -> None:
             "Spider data not found. Download the official Spider dev set and point\n"
             "the harness at it (see scripts/download_spider.py):\n"
             "  export SPIDER_DIR=/path/to/spider   # must contain dev.json + database/\n"
-            "Then re-run:  backend/.venv/bin/python scripts/run_spider_subset.py --limit 50 --seed 42",
+            "Then re-run:  backend/.venv/bin/python scripts/run_spider_subset.py --full",
             file=sys.stderr,
         )
         raise SystemExit(2)
 
-    results = run_subset(spider_dir, args.limit, args.seed, Path(args.out_dir), args.max_candidates)
+    out_dir = Path(args.out_dir)
+    if args.full:
+        results = run_full(spider_dir, out_dir, args.max_candidates)
+        basename = "results_full"
+    else:
+        results = run_subset(spider_dir, args.limit, args.seed, out_dir, args.max_candidates)
+        basename = "results"
+
     m = results["metrics"]
     b, f, impr = m["baseline"], m["full"], m["improvement"]
-    print(f"Ran {results['count']} Spider-subset examples (seed {args.seed}, generator: {results['generator']}).")
+    scope = "full dev set" if args.full else f"subset (seed {args.seed})"
+    print(f"Ran {results['count']} Spider dev examples — {scope} · generator: {results['generator']}.")
     print(f"  baseline  exec-acc {b['execution_accuracy_pct']}%  valid-gen {b['valid_sql_generation_pct']}%  "
           f"exec-ok {b['execution_success_pct']}%  latency {b['avg_latency_ms']}ms")
     print(f"  full      exec-acc {f['execution_accuracy_pct']}%  valid-gen {f['valid_sql_generation_pct']}%  "
@@ -429,9 +537,10 @@ def main() -> None:
     print(f"  improvement  +{impr['absolute_pct']} pts absolute  ({impr['relative_pct']}% relative)")
     print(f"  wrong-answer caught {m['wrong_answers_caught_count']}/{m['executable_wrong_baseline_count']} "
           f"({m['wrong_answers_caught_rate']}%)   repairs {m['repair_successful_count']}/{m['repair_attempted_count']}")
-    print(f"  failures: {len(results['failures'])} (see spider/results.md)")
-    print(f"  subset saved: spider/{results['subset']['file']}")
-    print("Wrote spider/results.json and spider/results.md")
+    print(f"  failures: {len(results['failures'])}")
+    if not args.full:
+        print(f"  subset saved: spider/{results['subset']['file']}")
+    print(f"Wrote spider/{basename}.json and spider/{basename}.md")
 
 
 if __name__ == "__main__":

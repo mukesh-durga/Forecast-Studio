@@ -246,6 +246,17 @@ candidate's sample check fails. The response reports `generator: "generic"`,
 `generic_mode_used: true`, and the usual `sample_checked` / `repair_attempted` /
 `repair_successful` flags.
 
+**Semantic grounding & structured plan.** Generic answers are routed by entity:
+customer *spend/revenue* questions join `customers → orders → order_items` (never
+`marketing_campaigns.spend`, which is ad spend); marketing/channel questions use
+`marketing_campaigns`; product/category revenue uses `products`/`order_items`. A
+query is **not** marked verified just because it executed — verification checks
+that the SQL's tables actually fit the question, and mismatches trigger one
+table-group repair. When `show_debug` is set, a successful generic answer returns a
+**structured plan** with a matched `generic_*` intent (e.g. `generic_customer_spend`)
+plus the real tables, joins, measures, dimensions, and expected columns — not
+`intent: unsupported`.
+
 > The generic generator is a deterministic heuristic (no LLM), strongest on the
 > patterns above; genuinely unanswerable questions still return unsupported.
 
@@ -368,23 +379,29 @@ Spider. Reproduce:
 backend/.venv/bin/python scripts/run_eval.py   # writes eval/results.json + eval/results.md
 ```
 
-### Spider-subset benchmark
+### Spider benchmark (dev set)
 
-A separate harness evaluates the pipeline on a configurable **subset of the
-official Spider dev set** (Yale) — a standard text-to-SQL benchmark. It is a
-**subset** harness (default 50 examples, `--limit N`); it does **not** run the
-full Spider benchmark, and **no full-Spider accuracy is claimed anywhere in this
-project**. Spider is Yale-licensed and downloaded manually — it is not committed
-here, and no results are checked in.
+A separate harness evaluates the pipeline on the **official Spider dev set** (Yale)
+— a standard text-to-SQL benchmark. It runs either a deterministic **subset**
+(`--limit N --seed S`, default 50) or the **entire dev set** (`--full`, all 1,034
+examples). Scoring is **execution accuracy** (result-set comparison), not the
+official exact-match metric, and it is run against the **dev** set — so these are
+honest dev-set execution numbers, **not** an official Spider test-set / leaderboard
+figure. Spider is Yale-licensed and downloaded manually — it is not committed here,
+and no results are checked in.
 
 ```bash
 backend/.venv/bin/python scripts/download_spider.py                      # checks / prints setup
 export SPIDER_DIR=/path/to/spider                                        # dev.json + database/
 backend/.venv/bin/python scripts/run_spider_subset.py --limit 50 --seed 42   # or --limit 10 / 25
+backend/.venv/bin/python scripts/run_spider_subset.py --full                 # ENTIRE dev set (1,034 ex)
 ```
 
 The subset is chosen **deterministically** from `--limit N --seed S` and saved to
-`spider/subsets/dev_N_seedS.json`, so a run is reproducible.
+`spider/subsets/dev_N_seedS.json`, so a run is reproducible. `--full` evaluates
+**every example in `dev.json`** (no sampling) and writes separate
+`spider/results_full.json` / `spider/results_full.md` artifacts, so the full run
+never clobbers the subset ones.
 
 A dedicated **schema-aware Spider generator** ([`scripts/spider_generator.py`](scripts/spider_generator.py))
 is used only by this harness (the normal app keeps its demo planner/generator).
@@ -419,19 +436,54 @@ report includes `executable_wrong_baseline_count`, `wrong_answers_caught_count`,
 failed examples** (question, db_id, estimated difficulty, gold SQL, baseline & full
 predicted SQL, reason).
 
+**Latest measured runs** (seed 42, deterministic subsets — real output from
+`run_spider_subset.py`, not hardcoded):
+
+| Subset (seed 42) | Baseline exec-acc | Full exec-acc | Improvement (abs / rel) | Wrong answers caught |
+|---|---|---|---|---|
+| `--limit 10` | 10.0% | 20.0% | +10.0 pts / +100% | 1 / 8 (12.5%) |
+| `--limit 25` | 16.0% | 24.0% | +8.0 pts / +50% | 2 / 19 (10.5%) |
+| `--limit 50` | 16.0% | 24.0% | +8.0 pts / +50% | 4 / 39 (10.3%) |
+
+Valid-SQL-generation and execution-success rates are 98–100% across these runs;
+full mode's higher execution accuracy comes from value linking, multi-candidate
+selection, and repair — not from touching gold SQL.
+
+**Full Spider dev set** (all 1,034 examples, `--full` — real measured output, no
+sampling, no hardcoding):
+
+| Metric | Baseline | Full |
+|---|---|---|
+| Execution accuracy (of 1,032 gold-executable) | 11.0% | 15.3% |
+| Valid SQL generation rate | 98.2% | 98.9% |
+| Execution success rate | 96.7% | 97.7% |
+
+Absolute improvement **+4.3 pts** (**+39.1%** relative). Wrong-but-executable
+baseline queries: **885**; caught by the full pipeline: **49 (5.5%)**. Accuracy by
+estimated difficulty (full mode): **easy 30.0%** (426 ex), **medium 7.0%** (400 ex),
+**hard 1.0%** (206 ex). These are deliberately honest numbers for a **deterministic
+schema-aware heuristic (no LLM)** — the value of the harness is the reproducible
+baseline-vs-full comparison and the wrong-answer catch rate, **not** a
+state-of-the-art accuracy claim.
+
 Numbers are measured on the examples run — **never hardcoded** — and vary with the
-subset (the heuristic handles single-table patterns and value filters well, and
-multi-table joins / nested sub-queries poorly). Full mode measurably beats the
-single-shot baseline on the seeded subsets, but absolute accuracy stays modest;
-run it yourself and cite your own measured number and subset size rather than a
-fixed figure. Spider data, the saved subsets, and results files are git-ignored.
+subset size and seed (the heuristic handles single-table patterns and value filters
+well, and multi-table joins / nested sub-queries poorly, which is why the full-dev
+breakdown drops sharply from easy to hard). Full mode measurably beats the
+single-shot baseline on every seeded subset **and on the full dev set**, but absolute
+accuracy stays modest — these are honest dev-set execution numbers for a heuristic,
+not an official Spider leaderboard figure. Re-run it (the exact commands above) and
+cite the measured number and scope. Spider data, the saved subsets, and results files
+(`results*.json` / `results*.md`) are git-ignored.
 
 ## Future improvements
 
 - A general text-to-SQL model path with verification templates for arbitrary
   questions.
-- Snowflake connector and user-supplied read-only connections (PostgreSQL/Neon
-  is already supported — see above).
+- User-supplied read-only connections (PostgreSQL/Neon is already supported —
+  see above).
+- Additional warehouse connectors such as Snowflake are **not implemented** —
+  only SQLite and Postgres are supported today.
 - Semantic schema retrieval for larger schemas.
 - Extend generation beyond the demo intents so the Spider-subset harness (above)
   produces meaningful accuracy on arbitrary databases.

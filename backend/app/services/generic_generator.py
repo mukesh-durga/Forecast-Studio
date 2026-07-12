@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-from app.models.responses import SchemaResponse
+from app.models.responses import QueryPlan, SchemaResponse
 
 # Question categories the classifier returns.
 DB_ANALYTICS = "database_analytics_question"
@@ -244,6 +244,121 @@ def semantic_mismatch(question: str, sql: str) -> Optional[str]:
             and "products" not in s and "order_items" not in s):
         return "product/category revenue question without products/order_items"
     return None
+
+
+# --- structured generic plan (so debug output is not "unsupported") ----------
+
+_AGG_CALL_RE = re.compile(r"\b(?:SUM|AVG|MIN|MAX|COUNT)\s*\(", re.IGNORECASE)
+_COL_REF_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\b")
+
+
+def _split_top_level(body: str) -> list[str]:
+    """Split on commas that are not inside parentheses (SELECT/GROUP/ORDER lists)."""
+    parts, depth, cur = [], 0, ""
+    for ch in body:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    if cur.strip():
+        parts.append(cur.strip())
+    return parts
+
+
+def _generic_intent(question: str, sql: str) -> str:
+    """A readable ``generic_*`` intent name derived from the question and SQL shape."""
+    q = (question or "").lower()
+    s = (sql or "").lower()
+    spend = any(w in q for w in ("spent", "spend", "paid", "purchase", "bought"))
+    revenue = any(w in q for w in _REVENUE_WORDS)
+
+    if "marketing_campaigns" in s:
+        return "generic_marketing_spend"
+    if "customer" in q and spend:
+        return "generic_customer_spend"
+    if "customer" in q and revenue:
+        return "generic_customer_revenue"
+    if "status" in q and (revenue or spend):
+        return "generic_revenue_by_order_status"
+    if "product" in q and "order_items" in s:
+        return "generic_product_revenue"
+    if "category" in q and "order_items" in s:
+        return "generic_category_revenue"
+    if any(w in q for w in ("month", "monthly")) and "count(" in s:
+        return "generic_monthly_order_count"
+    if any(w in q for w in ("month", "monthly")):
+        return "generic_monthly_revenue"
+    if "support_tickets" in s:
+        return "generic_support_tickets"
+    if "count(" in s:
+        return "generic_count"
+    if _AGG_CALL_RE.search(sql or ""):
+        return "generic_aggregate"
+    return "generic_select"
+
+
+def build_generic_plan(
+    question: str, schema: SchemaResponse, sql: str, expected_columns: list[str],
+) -> QueryPlan:
+    """Parse a generated generic SELECT into a structured, matched ``QueryPlan``.
+
+    This is what keeps the debug output honest: a generic question that was
+    answered successfully reports ``matched=True`` with a ``generic_*`` intent
+    and the real tables/joins/measures/dimensions — not ``unsupported``. The plan
+    is derived from the SQL that actually executed (no gold, no LLM).
+    """
+    intent = _generic_intent(question, sql)
+
+    tables: list[str] = []
+    for t in re.findall(r"\b(?:FROM|JOIN)\s+([A-Za-z_][A-Za-z0-9_]*)", sql, re.IGNORECASE):
+        if t not in tables:
+            tables.append(t)
+
+    joins = [
+        m.strip() for m in re.findall(
+            r"\bJOIN\s+[A-Za-z_][A-Za-z0-9_]*\s+ON\s+(.+?)"
+            r"(?=\s+(?:JOIN|GROUP\s+BY|ORDER\s+BY|LIMIT)\b|$)",
+            sql, re.IGNORECASE,
+        )
+    ]
+
+    sel = re.search(r"\bSELECT\s+(.*?)\s+\bFROM\b", sql, re.IGNORECASE | re.DOTALL)
+    select_exprs = _split_top_level(sel.group(1)) if sel else []
+    measures = [e for e in select_exprs if _AGG_CALL_RE.search(e)]
+    dimensions = [e for e in select_exprs if e != "*" and not _AGG_CALL_RE.search(e)]
+
+    gb = re.search(r"\bGROUP\s+BY\s+(.+?)(?=\s+(?:ORDER\s+BY|LIMIT)\b|$)", sql, re.IGNORECASE)
+    group_by = _split_top_level(gb.group(1)) if gb else []
+    ob = re.search(r"\bORDER\s+BY\s+(.+?)(?=\s+\bLIMIT\b|$)", sql, re.IGNORECASE)
+    order_by = _split_top_level(ob.group(1)) if ob else []
+    lm = re.search(r"\bLIMIT\s+(\d+)", sql, re.IGNORECASE)
+    limit = int(lm.group(1)) if lm else None
+
+    required_columns = sorted(set(_COL_REF_RE.findall(sql)))
+    confidence = round(min(0.8, 0.6 + 0.1 * bool(group_by) + 0.05 * bool(joins)), 2)
+
+    return QueryPlan(
+        question=question,
+        intent=intent,
+        matched=True,
+        confidence=confidence,
+        target_connection=schema.connection_id,
+        required_tables=tables,
+        required_columns=required_columns,
+        joins=joins,
+        measures=measures,
+        dimensions=dimensions,
+        filters=[],
+        group_by=group_by,
+        order_by=order_by,
+        limit=limit,
+        expected_result_columns=list(expected_columns or []),
+    )
 
 
 def _detect_limit(q: str) -> Optional[int]:

@@ -134,6 +134,57 @@ def test_semantic_mismatch_flags_customer_spend_on_marketing():
     assert reason is not None and "marketing_campaigns" in reason
 
 
+def test_build_generic_plan_customer_spend(schema):
+    g = gg.generate("Which customers spent the most?", schema)
+    plan = gg.build_generic_plan("Which customers spent the most?", schema, g.sql, g.expected_columns)
+    assert plan.matched is True
+    assert plan.intent == "generic_customer_spend"
+    assert plan.confidence > 0.0
+    assert set(plan.required_tables) == {"order_items", "orders", "customers"}
+    assert any("SUM(" in m for m in plan.measures)
+    assert plan.dimensions == ["customers.name AS customer_name"]
+    assert plan.group_by == ["customers.name"]
+    assert plan.order_by == ["total_spent DESC"]
+    assert plan.limit == 5
+    assert plan.expected_result_columns == ["customer_name", "total_spent"]
+    # Joins are parsed as FK equalities, not a naked table name.
+    assert any("order_items.order_id = orders.id" in j for j in plan.joins)
+
+
+def test_build_generic_plan_revenue_by_order_status(schema):
+    q = "Show revenue by order status"
+    g = gg.generate(q, schema)
+    plan = gg.build_generic_plan(q, schema, g.sql, g.expected_columns)
+    assert plan.matched is True
+    assert plan.intent == "generic_revenue_by_order_status"
+    assert plan.group_by == ["orders.status"]
+    assert plan.expected_result_columns == ["status", "revenue"]
+
+
+def test_build_generic_plan_postgres_month_expr_parsed(schema):
+    pg = schema.model_copy(update={"dialect": "postgresql"})
+    q = "How many orders were placed each month?"
+    g = gg.generate(q, pg)
+    plan = gg.build_generic_plan(q, pg, g.sql, g.expected_columns)
+    assert plan.matched is True
+    # The to_char(...) dimension has an inner comma; top-level split keeps it whole.
+    assert plan.dimensions == ["to_char(orders.order_date, 'YYYY-MM') AS month"]
+    assert plan.measures == ["COUNT(*) AS count"]
+
+
+def test_generic_debug_plan_end_to_end(client):
+    b = client.post(
+        "/query",
+        json={"question": "Which customers spent the most?", "show_debug": True},
+    ).json()
+    assert b["generic_mode_used"] is True
+    plan = b["plan"]
+    assert plan is not None
+    assert plan["matched"] is True
+    assert plan["intent"] == "generic_customer_spend"      # NOT "unsupported"
+    assert "customers" in plan["required_tables"]
+
+
 def test_semantic_mismatch_none_for_correct_customer_sql():
     good = ("SELECT customers.name AS customer_name, "
             "SUM(order_items.quantity * order_items.unit_price) AS total_spent "

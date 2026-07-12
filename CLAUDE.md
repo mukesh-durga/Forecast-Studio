@@ -25,7 +25,7 @@ Natural-language analytics platform that converts business questions into verifi
 
 **Resume angle:**
 
-Built a full-stack natural-language analytics system that turns plain-English questions into SQL for Postgres/Snowflake-style databases, executes queries in a controlled read-only sandbox, and validates answer correctness before returning results.
+Built a full-stack natural-language analytics system that turns plain-English questions into SQL across SQLite and PostgreSQL, executes queries in a controlled read-only sandbox, and validates answer correctness before returning results.
 
 ---
 

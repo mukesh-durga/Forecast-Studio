@@ -425,6 +425,75 @@ def test_harness_runs_end_to_end_and_writes_results(toy_spider, tmp_path):
     assert "no full-benchmark claim" in md
 
 
+def test_harness_full_run_writes_full_artifacts(toy_spider, tmp_path):
+    import run_spider_subset as harness
+
+    out_dir = tmp_path / "out"
+    results = harness.run_full(toy_spider, out_dir=out_dir)
+
+    # Full-mode artifacts are written under a distinct basename (never clobbering
+    # the subset results.json/md).
+    assert (out_dir / "results_full.json").exists()
+    assert (out_dir / "results_full.md").exists()
+    assert not (out_dir / "results.json").exists()
+    # No sampling: every dev example is run, and no subset file is saved.
+    assert results["count"] == 2
+    assert results["dataset"] == "Spider dev (full)"
+    assert results["subset"]["full"] is True
+    assert results["subset"]["seed"] is None
+    assert not (out_dir / "subsets").exists()
+    # Per-difficulty breakdown is present and its denominators are gold-executable.
+    by_diff = results["by_difficulty"]
+    assert by_diff
+    assert sum(v["gold_executable"] for v in by_diff.values()) == 2
+    md = (out_dir / "results_full.md").read_text().lower()
+    assert "full dev-set" in md
+    assert "entire spider dev set" in md
+    assert "accuracy by estimated difficulty" in md
+    # An honest full run makes NO full-benchmark subset caveat but also claims no SOTA.
+    assert "not** a state-of-the-art" in md or "not a state-of-the-art" in md
+
+
+def test_write_markdown_switches_header_on_full_flag():
+    import run_spider_subset as harness
+
+    def _fake_results(full: bool) -> dict:
+        return {
+            "generated_at": "2026-07-12T00:00:00+00:00",
+            "generator": "spider-heuristic",
+            "count": 1032,
+            "subset": ({"limit": 1032, "seed": None, "file": None, "full": True} if full
+                       else {"limit": 50, "seed": 42, "file": "subsets/dev_50_seed42.json", "full": False}),
+            "by_difficulty": {"easy": {"gold_executable": 1, "baseline_accuracy_pct": 50.0,
+                                       "full_accuracy_pct": 100.0, "baseline_correct": 0, "full_correct": 1}},
+            "metrics": {
+                "baseline": {"execution_accuracy_pct": 11.0, "valid_sql_generation_pct": 98.2,
+                             "execution_success_pct": 96.7, "unsafe_rejection_count": 0,
+                             "avg_latency_ms": 1.2, "estimated_cost_usd": 0.0,
+                             "total": 1032, "gold_executable": 1032},
+                "full": {"execution_accuracy_pct": 15.3, "valid_sql_generation_pct": 98.9,
+                         "execution_success_pct": 97.7, "unsafe_rejection_count": 0,
+                         "avg_latency_ms": 1.5, "estimated_cost_usd": 0.0,
+                         "total": 1032, "gold_executable": 1032},
+                "improvement": {"absolute_pct": 4.3, "relative_pct": 39.1},
+                "executable_wrong_baseline_count": 885, "wrong_answers_caught_count": 49,
+                "wrong_answers_caught_rate": 5.5,
+                "repair_attempted_count": 13, "repair_successful_count": 0,
+            },
+            "wrong_answer_detection": {"caught_cases": []},
+            "failures": [],
+        }
+
+    full_md = harness.write_markdown(_fake_results(full=True))
+    assert "full dev-set" in full_md.lower()
+    assert "entire Spider dev set" in full_md
+    assert "seed" not in full_md.split("## ")[0].lower()  # no seed caveat in the full header block
+
+    sub_md = harness.write_markdown(_fake_results(full=False))
+    assert "Spider-subset Evaluation" in sub_md
+    assert "not the full benchmark" in sub_md.lower()
+
+
 def test_build_schema_from_sqlite(toy_spider):
     import run_spider_subset as harness
 

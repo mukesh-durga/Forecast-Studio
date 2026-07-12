@@ -405,6 +405,14 @@ def run_query(
     )
     verification_ms = round((time.perf_counter() - ver_start) * 1000, 2)
 
+    # For generic answers, replace the planner's (unmatched) debug plan with a
+    # structured generic plan derived from the SQL that actually executed, so the
+    # debug output shows a matched generic_* intent rather than "unsupported".
+    if generic_mode_used and request.show_debug:
+        debug_plan = generic_generator.build_generic_plan(
+            request.question, schema, safe_sql, generic_expected_columns
+        )
+
     telemetry = Telemetry(
         provider=provider,
         planner_latency_ms=planner_ms,
